@@ -1,0 +1,13 @@
+celery==4.1.1
+qrcode==6.1
+django==2.1.7
+django_redis==4.11.0
+itsdangerous==1.1.0
+django_tinymce==2.8.0
+alipay==0.7.4
+django_haystack==2.8.1
+pip install django==2.2.11
+pip install django-tinymce==2.8.0
+pip install celery==4.1.1
+pip install django-redis==4.11.0
+pip install pymysql==0.9.3

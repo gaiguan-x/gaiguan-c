@@ -1,0 +1,614 @@
+<!doctype html>
+{% load staticfiles %}
+<html lang="en">
+
+<head>
+    <!-- Required meta tags -->
+    <meta charset="utf-8">
+    <link rel="shortcut icon" href="{% static 'com/imgs/favicon.ico' %}"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+    <meta name="description" content="Coral - Onepage portfolio Template">
+    <meta name="author" content="esrat">
+
+    <!-- Fontawseom Icon CSS -->
+    <link rel="stylesheet" href="{% static 'com/css/all.css' %}">
+
+    <!-- Theme CSS -->
+    <link rel="stylesheet" href="{% static 'com/css/bootstrap.min.css' %}">
+    <link rel="stylesheet" href="{% static 'com/css/style.css' %}">
+    <link rel="stylesheet" href="{% static 'com/css/responsive.css' %}">
+
+    <title>欢迎访问{{ companyinfo.name }}</title>
+</head>
+
+<body id="page-top">
+
+<!-- NAVBAR
+================================================= -->
+<nav class="navbar navbar-expand-lg navbar-dark navbar-togglable  fixed-top " id="mainNav">
+    <div class="container">
+
+        <!-- Brand -->
+        <a class="navbar-brand js-scroll-trigger" href="#page-top">
+            <h2>盖冠政务</h2>
+        </a>
+
+        <!-- Toggler -->
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarCollapse"
+                aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon-bar">
+                    <i class="fa fa-bars"></i>
+                </span>
+        </button>
+
+        <!-- Collapse -->
+        <div class="collapse navbar-collapse" id="navbarCollapse">
+            <!-- Links -->
+            <ul class="navbar-nav ml-auto">
+                <li class="nav-item">
+                    <a class="nav-link js-scroll-trigger" href="#page-top">
+                        Home
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link js-scroll-trigger" href="#feature">
+                        特色
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link js-scroll-trigger" href="#about">
+                        关于
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link js-scroll-trigger" href="#service">
+                        服务
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link js-scroll-trigger" href="#portfolio">
+                        服务群体
+                    </a>
+                </li>
+
+                <li class="nav-item">
+                    <a class="nav-link js-scroll-trigger" href="#pricing">
+                        工本费用
+                    </a>
+                </li>
+                <li class="nav-item ">
+                    <a class="nav-link js-scroll-trigger" href="#contact">
+                        联系
+                    </a>
+                </li>
+            </ul>
+        </div>
+        <!-- / .navbar-collapse -->
+    </div>
+    <!-- / .container -->
+</nav>
+
+<!-- HERO
+================================================== -->
+<section class="section section-top section-full">
+
+    <!-- Cover -->
+    <div class="bg-cover" style="background-image: url({{ MEDIA_URL }}{{ companyinfo.img }});"></div>
+
+    <!-- Overlay -->
+    <div class="bg-overlay"></div>
+    <!-- Content -->
+    <div class="container">
+        <div class="row justify-content-center align-items-center">
+            <div class="col-md-10 col-lg-7 ">
+                <div class="banner-content">
+                    <!-- Preheading -->
+                    <p class="text-white text-uppercase text-center text-xs">
+                        <span>政务行业 领先</span>
+                    </p>
+
+                    <!-- Heading -->
+                    <h1 class="text-white text-center mb-4 display-4 font-weight-bold">
+                        {{ companyinfo.info1 }}
+                    </h1>
+
+                    <!-- Subheading -->
+                    <p class="lead text-white text-center mb-5">
+                        {{ companyinfo.info2 }}
+                    </p>
+
+                    <!-- Button -->
+                    <p class="text-center mb-0">
+                        <a href="#contact" target="_blank" class="btn btn-primary ">
+                            Contact Now
+                        </a>
+                    </p>
+                </div>
+            </div>
+        </div>
+        <!-- / .row -->
+    </div>
+    <!-- / .container -->
+</section>
+
+<!-- SECTIONS
+================================================== -->
+<!-- PAGES
+================================================== -->
+
+<!-- FEATURES
+================================================== -->
+<section class="section" id="feature">
+    <div class="container">
+        <div class="row justify-content-center mb-4">
+            <div class="col-md-8 col-lg-6 text-center">
+
+                <!-- Heading -->
+                <h2 class="lg-title mb-2">
+                    我们的优势
+                </h2>
+
+                <!-- Subheading -->
+                <p class="mb-5 ">
+                    为人民服务，实现人民群众的诉求
+                </p>
+
+            </div>
+        </div>
+        <!-- / .row -->
+
+        <div class="row justy-content-center">
+            {% for super in supers %}
+                <div class="col-lg-3 col-md-6">
+                    <div class="text-center feature-block">
+                        <div class="feature-icon-block mb-4">
+                            <i class="fa {% if forloop.counter == 1 %}fa-bath
+{% elif forloop.counter == 2 %}fa-anchor
+{% elif forloop.counter == 3 %}fa-clock
+{% elif forloop.counter == 4 %}fa-dice
+{% endif %}"></i>
+
+                        </div>
+                        <h4 class="mb-3 ">{{ super.info }}</h4>
+                        <p>{{ super.content }}</p>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+
+<!-- ABOUT
+================================================== -->
+<section class="section bg-light" id="about">
+    <div class="container">
+        <div class="row ">
+            <div class="col-lg-6">
+                <div class="about-img">
+                    <img src="{% static 'com/imgs/11.jpg' %}" alt="" class="img-fluid">
+                </div>
+            </div>
+
+            <div class="col-lg-6 ">
+                <div class="about-content">
+                    <h2 class="display-5">
+                        独有的方式展示页面
+                    </h2>
+                    <p>I广东政务服务网是广东省人民政府办公厅主办的网站。该平台汇聚了广东的省、市、县、镇、村五级政务服务事项,
+                        多类涉企事项和涉民生事项均可在该网站统一办理。.</p>
+
+
+                    <ul class="list-unstyled skill-list ">
+                        {% for about in aboutus %}
+                            <li>{{ about.title }}</li>
+                        {% endfor %}
+                    </ul>
+
+                    <p>如有疑问或反馈. <a href="#contact">现在留言</a></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="row mt-5 align-items-center ">
+            <div class="col-lg-6 col-md-6">
+                <div class="about-content-2 ">
+                    <h2 class="display-5">
+                        提供最新的政务政策服务
+                    </h2>
+                    <p>惠民利民，不拿群众一针一线</p>
+
+                    <a href="#service" class="btn btn-primary">服务</a>
+                </div>
+            </div>
+
+            <div class="col-lg-6 col-md-6">
+                <div class="about-img">
+                    <img src="{% static 'imgs/11.jpg' %}" alt="" class="img-fluid">
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+
+<!-- SERVICES
+================================================== -->
+<section class="section" id="service">
+    <!-- Content -->
+    <div class="container">
+        <div class="row justify-content-center mb-4">
+            <div class="col-md-8 col-lg-7 text-center">
+
+                <!-- Heading -->
+                <h2 class="lg-title mb-2">
+                    盖冠政务主营服务
+                </h2>
+
+                <!-- Subheading -->
+                <p class="mb-5">
+                    引领国内政务服务风向标，完美诠释一键式。
+                </p>
+
+            </div>
+        </div>
+        <!-- / .row -->
+
+
+        <div class="row">
+            {% for service in services %}
+                <div class="col-lg-4 col-sm-6 col-md-6 mb-4 ">
+                    <div class="service-block d-flex">
+                        <div class="service-icon ">
+                            <i class="fa {% if forloop.counter == 1 %}fa-laptop
+{% elif forloop.counter == 2 %}fa-code
+{% elif forloop.counter == 3 %}fa-leaf
+{% elif forloop.counter == 4 %}fa-cogs
+{% elif forloop.counter == 5 %}fa-bug
+{% elif forloop.counter == 6 %}fa-shield-alt
+{% endif %}"></i>
+                        </div>
+                        <div class="service-content ">
+                            <h4> {{ service.title }}</h4>
+                            <p>{{ service.info }}</p>
+                        </div>
+                    </div>
+                </div>
+
+            {% endfor %}
+
+        </div>
+    </div>
+</section>
+
+<!-- ABOUT
+================================================== -->
+<section class="section bg-light" id="portfolio">
+    <div class="container">
+        <div class="row justify-content-center mb-4">
+            <div class="col-md-8 col-lg-7 text-center">
+
+                <!-- Heading -->
+                <h2 class="lg-title mb-2">
+                    服务群众
+                </h2>
+
+                <!-- Subheading -->
+                <p class="mb-5">
+                    服务广东1 .13亿人，广东人民群众的好助手
+                </p>
+            </div>
+        </div>
+        <!-- / .row -->
+
+        <div class="row justify-content-center">
+            {% for customer in customers %}
+                <div class="col-lg-4 col-md-6 col-sm-6 mb-5">
+                    <div class="portfolio-block">
+                        <img src="{{ MEDIA_URL }}{{ customer.img }}" alt="portfolio">
+
+                        <div class="portfolio-content">
+                            <h4>{{ customer.name }}</h4>
+                            <span class="work-cat">{{ customer.info }}</span>
+                        </div>
+                        <div class="overlay-content">
+                            <a href="{{ customer.url }}"><i class="fa fa-link"></i></a>
+                        </div>
+                    </div>
+                </div>
+
+            {% endfor %}
+
+
+        </div>
+    </div>
+</section>
+
+
+<!-- Pricing
+================================================== -->
+<section class="section" id="pricing">
+    <div class="container">
+        <div class="row mb-4">
+            <div class="col-md-6 col-lg-4 ">
+
+                <!-- Heading -->
+                <h2 class="lg-title mb-2 ">
+                    实惠的工本费用，完美的服务
+                </h2>
+
+                <!-- Subheading -->
+                <p class="my-4 ">
+                    盖冠政务倡导多元化、深层次文化，多种文化模式，根据不同群体打造契合的服务体系。
+                </p>
+
+                <a href="#contact" class="btn btn-primary">现在留言</a>
+                <p class="text-primary mt-3">*我们广泛收集人民群众意见</p>
+            </div>
+
+            <div class="col-lg-4 col-md-6 col-sm-6">
+                <div class="pricing-block">
+                    <h2>个人服务</h2>
+
+                    <h3 class="price my-3 ">
+                        多达50种以上
+                        <small>￥</small>
+                    </h3>
+
+                    <ul class="list-unstyled">
+                        {% for pricing_sta in pricing_stas %}
+                            <li>{{ pricing_sta.info }}</li>
+                        {% endfor %}
+                    </ul>
+
+                    <a href="#contact" class="btn btn-outline-dark">官网预约服务</a>
+                </div>
+            </div>
+
+            <div class="col-lg-4 col-md-6 col-sm-6">
+                <div class="pricing-block">
+                    <h2>法人服务</h2>
+
+                    <h3 class="price my-3 ">
+                        多达100种以上
+                        <small>￥</small>
+                    </h3>
+
+                    <ul class="list-unstyled">
+                        {% for pricing_upd in pricing_upds %}
+                            <li>{{ pricing_upd.info }}</li>
+                        {% endfor %}
+
+                    </ul>
+
+                    <a href="#contact" class="btn btn-outline-dark">详情请看官网</a>
+                </div>
+            </div>
+        </div>
+        <!-- / .row -->
+    </div>
+</section>
+
+
+<!-- Testimonial
+================================================== -->
+<section class="section bg-dark" id="testimonial">
+    <div class="carousel slide" id="review-slider" data-ride="carousel">
+        <ol class="carousel-indicators">
+            <li data-target="#review-slider" data-slide-to="0" class="active"></li>
+            <li data-target="#review-slider" data-slide-to="1"></li>
+            <li data-target="#review-slider" data-slide-to="2"></li>
+        </ol>
+        <div class="caousel-inner">
+            <div class="container">
+                <div class="row">
+                    <div class="col-lg-8 m-auto">
+
+                        {% for employee in employees %}
+                            <div class="carousel-item {% ifequal forloop.counter 1 %} active {% endifequal %} text-center test-content">
+                                <div class="client-img">
+                                    <img src="{{ MEDIA_URL }}{{ employee.img }}" alt="" class="img-fluid ">
+                                </div>
+
+                                <p class="lead">{{ employee.info }}</p>
+
+                                <div class="client-text">
+                                    <h3>{{ employee.name }}</h3>
+                                    <h6>{{ employee.post }}</h6>
+                                </div>
+                            </div>
+                        {% endfor %}
+
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+
+<!-- Contact
+================================================== -->
+<section class="section" id="contact">
+    <div class="container">
+        <div class="row justify-content-center mb-4">
+            <div class="col-md-8 col-lg-8 text-center">
+
+                <!-- Heading -->
+                <h2 class="lg-title mb-2">
+                    欢迎咨询
+                </h2>
+
+                <!-- Subheading -->
+                <p class="mb-5">
+                    我们一直致力于服务人民群众，达成人民群众内心最美的期盼
+                </p>
+
+            </div>
+        </div>
+        <!-- / .row -->
+
+
+        <div class="row justify-content-center">
+            <div class="col-lg-8">
+                <form id="main_contact_form" method="post" class="contact__form">
+                    <!-- form message -->
+                    <div class="row">
+                        <div class="col-12">
+                            <div class="alert alert-success contact__msg" id="alert" style="display: none" role="alert">
+                                提交成功，请静候消息。
+                            </div>
+                            <div class="alert alert-warning contact__msg" id="alert_" style="display: none" role="alert">
+                                提交失败，请重新填写信息。
+                            </div>
+                        </div>
+                    </div>
+                    <!-- end message -->
+
+                    <div class="row">
+                        <div class="col-lg-6">
+                            <div class="form-group">
+                                <input type="text" name="name" id="name" class="form-control"
+                                       placeholder="Enter your Name">
+                            </div>
+                        </div>
+                        <div class="col-lg-6">
+                            <div class="form-group">
+                                <input type="text" name="email" id="email" class="form-control"
+                                       placeholder="Enter your Email *" required="required">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-lg-12">
+                            <div class="form-group">
+                                <input type="text" name="subject" id="subject" class="form-control"
+                                       placeholder="Enter your Subject *" required="required">
+                            </div>
+                        </div>
+                        <div class="col-lg-12">
+                            <div class="form-group">
+                                <textarea name="message" id="message" cols="30" rows="6" class="form-control"
+                                          placeholder="Enter your Message" required="required"></textarea>
+                            </div>
+                        </div>
+
+                        <div class="col-lg-12">
+                            <div class="submit text-center">
+                                <input name="submit" type="submit" class="btn btn-primary btn-lg" id="subtn" value="提交">
+                                <p class="pt-3">* 盖冠政务承诺会严格保护人民群众一切信息。</p>
+                            </div>
+                        </div>
+                    </div>
+                    {% csrf_token %}
+                </form>
+            </div>
+        </div>
+    </div>
+</section>
+
+
+<!-- FOOTER
+================================================== -->
+<footer class="top-padding bg-dark">
+    <!--Content -->
+    <div class="container">
+        <div class="row align-self-center">
+            <div class="col-lg-4 col-md-6">
+                <div class="footer-widget">
+                    <!-- Brand -->
+                    <a href="#" class="footer-brand text-white">
+                        盖冠政务
+                    </a>
+                    <p>完美的服务<br/>
+                        完美实现人民群众的诉求</p>
+                </div>
+            </div>
+
+            <div class="col-lg-2 ml-lg-auto col-md-2">
+
+                <!-- Links -->
+                <ul class="footer-link list-unstyled ml-0 justify-content-end">
+                    <li>
+                        <a href="#service" class="text-white">
+                            服务
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#portfolio" class="text-white">
+                            人民群众
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#pricing" class="text-white">
+                            工本费用
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            <div class="col-lg-3 col-md-4">
+
+                <!-- Links -->
+                <ul class="footer-link list-unstyled ml-0 justify-content-end">
+                    <li>
+                        <i class="fa fa-mobile"></i> {{ companyinfo.phone }}
+                    </li>
+                    <li>
+                        <i class="fa fa-location-arrow"></i> {{ companyinfo.address }}
+                    </li>
+                    <li>
+                        <i class="fa fa-globe"></i> {{ companyinfo.web }}
+                    </li>
+                </ul>
+            </div>
+        </div>
+        <!-- / .row -->
+
+        <div class="row justify-content-md-center footer-copy">
+            <div class="col-lg-8 col-md-6 col-sm-6 text-center">
+                <p class="lead text-white-50">&copy; Copyright Reserved to {{ companyinfo.name }} |盖冠政务网站 </p>
+            </div>
+        </div>
+    </div>
+    <!-- / .container -->
+</footer>
+
+<!-- JAVASCRIPT
+================================================== -->
+<!-- Global JS -->
+<script src="{% static 'com/libs/jquery/jquery.min.js' %}"></script>
+<script src="{% static 'com/libs/bootstrap/bootstrap.bundle.min.js' %}"></script>
+
+<!-- Plugin JavaScript -->
+<script src="{% static 'com/js/jquery.easing.min.js' %}"></script>
+<script src="{% static 'com/js/ajax-contact.js' %}"></script>
+
+<!-- Theme JS -->
+<script src="{% static 'com/js/theme.js' %}"></script>
+<script>
+    $(function () {
+        $('#subtn').on('click', function () {
+            $.ajax({
+                url: "/contactus/",
+                type: "POST",
+                data: $('#main_contact_form').serialize(),
+                success: function (data) {
+                    console.log(data);
+                    if (data.status == 'success') {
+                        document.getElementById('alert').style.display = 'block';
+                    } else if (data.status == 'failed') {
+                        document.getElementById('alert_').style.display = 'block';
+                    }
+                },
+            });
+            return false
+        })
+    })
+</script>
+
+</body>
+
+</html>

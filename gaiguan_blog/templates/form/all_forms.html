@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>总的表单页面</title>
+    <link rel="stylesheet" href="../../static/layui/css/layui.css">
+    <link rel="stylesheet" href="../../static/css/form.css">
+</head>
+<body>
+<div class="layui-container">
+    <fieldset class="layui-elem-field layui-field-title" style="margin-top: 20px;">
+        <legend>所有的表单</legend>
+    </fieldset>
+    <div class="layui-col-xs6 search-form" style="margin: 0 auto">
+        <div class="layui-col-xs7">
+            <input id="content" type="text" placeholder="输入表单名称..." autocomplete="off"
+                   class="layui-input layui-input-search">
+        </div>
+        <div class="layui-col-xs5">
+            <button id="search" type="submit" class="layui-btn">搜索表单</button>
+        </div>
+    </div>
+    <!--展示表单的面板-->
+    <div class="layui-col-xs12">
+        <!--这里是通过layui的分页动态添加到标签中的-->
+        <ul id="form" class="all-forms">
+
+        </ul>
+        <div id="forms" class="page-bottom">
+
+        </div>
+    </div>
+</div>
+
+</body>
+<script src="https://apps.bdimg.com/libs/jquery/2.1.4/jquery.min.js">
+</script>
+<script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
+<script src="../../static/layui/layui.js"></script>
+<script>
+    $(document).ready(function () {
+        // 回车事件
+        $(document).keypress(function (e) {
+            if ((e.keyCode || e.which) == 13) {
+                // 触发需要调用的方法
+                var text = $("#content").val();
+                if (text) {
+                    $.ajax({
+                        url: "{% url 'search_form' %}",
+                        type: "GET",
+                        data: {
+                            title: text,
+                        },
+                        dataType: "JSON",
+                        success: function (data, status) {
+                            if (status == "success") {
+                                layui.use(['laypage', 'layer'], function () {
+                                    var laypage = layui.laypage
+                                        , layer = layui.layer;
+                                    var datas = [];
+                                    datas = data["forms"];
+                                    //调用分页
+
+                                    laypage.render({
+                                        elem: 'forms'
+                                        , count: datas.length
+                                        , limit: 4
+                                        , jump: function (obj) {
+                                            //模拟渲染
+                                            document.getElementById('form').innerHTML = function () {
+                                                var arr = []
+                                                    ,
+                                                    thisData = datas.concat().splice(obj.curr * obj.limit - obj.limit, obj.limit);
+                                                layui.each(thisData, function (index, item) {
+                                                    arr.push('<div class="layui-card">' +
+                                                        '<div class="layui-card-header"><i class="layui-icon layui-icon-form" style="font-size: 20px; color: #1E9FFF;"></i>  </div>' +
+                                                        '<div class="layui-card-body">' +
+                                                        '<a href=/form/regist/' +
+                                                        item["id"] +
+                                                        ' class="layui-card-body">\n' +
+                                                        item["title"] +
+                                                        '</a><br>' +
+                                                        '</div>' +
+                                                        '</div>'
+                                                    );
+                                                });
+                                                return arr.join('');
+                                            }();
+                                        }
+                                    });
+                                })
+                            }
+                        }
+                    })
+                }
+            }
+        });
+        // 搜索按钮的点击事件
+        $("#search").click(function () {
+            var text = $("#content").val();
+            if (text) {
+                $.ajax({
+                    url: "{% url 'search_form' %}",
+                    type: "GET",
+                    data: {
+                        title: text,
+                    },
+                    dataType: "JSON",
+                    success: function (data, status) {
+                        if (status == "success") {
+                            layui.use(['laypage', 'layer'], function () {
+                                var laypage = layui.laypage
+                                    , layer = layui.layer;
+                                var datas = [];
+                                datas = data["forms"];
+                                //调用分页
+
+                                laypage.render({
+                                    elem: 'forms'
+                                    , count: datas.length
+                                    , limit: 4
+                                    , jump: function (obj) {
+                                        //模拟渲染
+                                        document.getElementById('form').innerHTML = function () {
+                                            var arr = []
+                                                ,
+                                                thisData = datas.concat().splice(obj.curr * obj.limit - obj.limit, obj.limit);
+                                            layui.each(thisData, function (index, item) {
+                                                arr.push('<div class="layui-card">' +
+                                                    '<div class="layui-card-header"><i class="layui-icon layui-icon-form" style="font-size: 20px; color: #1E9FFF;"></i>  </div>' +
+                                                    '<div class="layui-card-body">' +
+                                                    '<a href=/form/regist/' +
+                                                    item["id"] +
+                                                    ' class="layui-card-body">\n' +
+                                                    item["title"] +
+                                                    '</a><br>' +
+                                                    '</div>' +
+                                                    '</div>'
+                                                );
+                                            });
+                                            return arr.join('');
+                                        }();
+                                    }
+                                });
+                            })
+                        }
+                    }
+                })
+            }
+        });
+        // 获取所有表单的JSON数据
+        $.ajax({
+            url: "{% url 'get_forms' %}",
+            type: "GET",
+            dataType: "JSON",
+            success: function (data, status) {
+                if (status == "success") {
+                    //测试数据
+                    layui.use(['laypage', 'layer'], function () {
+                        var laypage = layui.laypage
+                            , layer = layui.layer;
+                        var datas = [];
+                        datas = data["forms"]
+                        //调用分页
+
+                        laypage.render({
+                            elem: 'forms'
+                            , count: datas.length
+                            , limit: 4
+                            , jump: function (obj) {
+                                //模拟渲染
+                                document.getElementById('form').innerHTML = function () {
+                                    var arr = []
+                                        , thisData = datas.concat().splice(obj.curr * obj.limit - obj.limit, obj.limit);
+                                    layui.each(thisData, function (index, item) {
+                                        arr.push('<div class="layui-card">' +
+                                            '<div class="layui-card-header"><i class="layui-icon layui-icon-form" style="font-size: 20px; color: #1E9FFF;"></i>  </div>' +
+                                            '<div class="layui-card-body">' +
+                                            '<a href=/form/regist/' +
+                                            item["id"] +
+                                            ' class="layui-card-body">\n' +
+                                            item["title"] +
+                                            '</a><br>' +
+                                            '</div>' +
+                                            '</div>'
+                                        );
+                                    });
+                                    return arr.join('');
+                                }();
+                            }
+                        });
+                    })
+                }
+            }
+        })
+    })
+</script>
+</html>

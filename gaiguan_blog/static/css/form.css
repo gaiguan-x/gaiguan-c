@@ -1,0 +1,26 @@
+.all-forms{
+    padding-left: 100px;
+}
+.per-form{
+    float: left;
+    display: inline;
+    padding-right: 20px;
+}
+.page-bottom{
+    padding-bottom: 20px;
+    text-align: center;
+}
+.page-style{
+    margin: 0 auto;
+}
+.search-form{
+    float: right;
+    padding-bottom: 100px;
+}
+a{
+    color: #0000cc;
+    font-size: 18px;
+}
+a:hover{
+    color: red;
+}
