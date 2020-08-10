@@ -1,0 +1,326 @@
+
+1. mysql内置的功能
+1.1 连接数据库
+-u 
+-p
+-S
+-h
+-P
+-e
+<
+例子:
+	1. mysql -uroot -p -S /tmp/mysql.sock
+	2. mysql -uroot -p -h10.0.0.51 -P3306
+	3. -e 免交互执行sql语句
+	[root@db01 ~]# mysql -uroot -p -e "show databases;"
+	4. < 恢复数据
+	[root@db01 ~]# mysql -uroot -p123 	 /root/world.sql
+1.2 内置命令
+	help 					打印mysql帮助
+	\c  ctrl+c 				结束上个命令运行
+	\q quit; exit; ctrl+d 	退出mysql
+	\G 						将数据竖起来显示
+	source 					恢复备份文件	
+	
+2. 	SQL基础应用
+2.1 SQL介绍
+结构化的查询语言
+关系型数据库通用的命令
+遵循SQL92的标准(SQL_MODE)
+2.2 SQL常用种类
+DDL  数据定义语言
+DCL  数据控制语言
+DML  数据操作语言
+DQL  数据查询语言
+
+3. SQL引入-数据库的逻辑结构
+库
+	库名字
+	库属性:字符集,排序规则
+
+表
+	表名
+	表属性:存储引擎类型,字符集,排序规则
+	列名
+	列属性:数据类型,约束,其他属性
+	数据行
+
+4. 字符集 (charset) 
+相当于MySQL的密码本(编码表)
+
+show charset;
+utf8		  : 3个字节
+utf8mb4 (建议): 4个字节,支持emoji
+
+
+5. 排序规则: collation 
+mysql> show collation;
+
+对于英文字符串的,大小写的敏感
+utf8mb4_general_ci 			大小写不敏感
+utf8mb4_bin  				大小写敏感(存拼音,日文)
+
+
+6. 数据类型介绍 
+6.1 数字
+整数
+tinyint 
+int    
+浮点数
+略
+6.2 字符串
+char(100)    	 
+	定长字符串类型,不管字符串长度多长,都立即分配100个字符长度的存储空间,未占满的空间使用"空格"填充
+varchar(100) 
+	变长字符串类型,每次存储数据之前,都要先判断一下长度,按需分配此盘空间.
+	会单独申请一个字符长度的空间存储字符长度(少于255,如果超过255以上,会占用两个存储空间)
+
+如何选择这两个数据类型?
+1. 少于255个字符串长度,定长的列值,选择char
+2. 多于255字符长度,变长的字符串,可以选择varchar
+
+enum 枚举数据类型
+address enum('sz','sh','bj'.....)
+			  1    2    3   
+悬念,以上数据类型可能会影响到索引的性能
+
+6.3 时间
+datetime 
+范围为从 1000-01-01 00:00:00.000000 至 9999-12-31 23:59:59.999999。
+timestamp
+范围为从 1970-01-01 00:00:00.000000 至 2038-01-19 03:14:07.999999。
+
+
+6.4 二进制
+略.
+
+
+7. DDL的应用
+
+-- 7.1 库的定义
+--- 创建数据库
+CREATE DATABASE zabbix CHARSET utf8mb4 COLLATE  utf8mb4_bin;
+--- 查看库情况
+SHOW DATABASES;
+SHOW CREATE DATABASE zabbix;
+--- 删除数据库(不代表生产操作)
+DROP DATABASE oldguo;
+--- 修改数据库字符集
+--- 注意: 一定是从小往大了改,比如utf8--->utf8mb4.
+--- 目标字符集一定是源字符集的严格超级.
+CREATE DATABASE oldguo;
+SHOW CREATE DATABASE oldguo;
+ALTER DATABASE oldguo CHARSET utf8mb4;
+
+-- 7.2 关于库定义规范 *****
+--- 1.库名使用小写字符
+--- 2.库名不能以数字开头
+--- 3.不能是数据库内部的关键字
+--- 4.必须设置字符集.
+
+-- 7.3 DDL-表定义
+--- 建表
+表名,列名,列属性,表属性
+--- 列属性
+PRIMARY KEY : 主键约束,表中只能有一个,非空且唯一.
+NOT NULL    : 非空约束,不允许空值
+UNIQUE KEY  : 唯一键约束,不允许重复值
+DEFAULT     : 一般配合 NOT NULL 一起使用.
+UNSIGNED    : 无符号,一般是配合数字列,非负数
+COMMENT     : 注释
+AUTO_INCREMENT : 自增长的列
+
+CREATE TABLE stu (
+id INT PRIMARY KEY NOT NULL AUTO_INCREMENT COMMENT '学号',
+sname VARCHAR(255) NOT NULL  COMMENT '姓名',
+age TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '年龄',
+gender ENUM('m','f','n') NOT NULL DEFAULT 'n' COMMENT '性别',
+intime DATETIME NOT NULL DEFAULT NOW() COMMENT '入学时间'
+)ENGINE INNODB CHARSET utf8mb4;
+
+
+--- 建表规范 *****
+--- 1. 表名小写字母,不能数字开头,
+--- 2. 不能是保留字符,使用和业务有关的表名
+--- 3. 选择合适的数据类型及长度
+--- 4. 每个列设置 NOT NULL + DEFAULT .对于数据0填充,对于字符使用有效字符串填充
+--- 5. 没个列设置注释
+--- 6. 表必须设置存储引擎和字符集
+--- 7. 主键列尽量是无关列数字列,最好是自增长
+--- 8. enum类型不要保存数字,只能是字符串类型
+
+
+--- 查询建表信息
+SHOW TABLES;
+SHOW CREATE TABLE stu;
+DESC stu;
+--- 创建一个表结构一样的表
+CREATE TABLE test LIKE stu;
+
+--- 删表(不代表生产操作)
+DROP TABLE test;
+
+--- 修改
+--- 在stu表中添加qq列 *****
+DESC stu;
+ALTER TABLE stu ADD qq VARCHAR(20) NOT NULL COMMENT 'qq号';
+
+pt-osc 
+
+--- 在sname后加微信列 ***
+ALTER TABLE stu ADD wechat VARCHAR(64) NOT NULL UNIQUE COMMENT '微信号' AFTER sname;
+
+--- 在id列前加一个新列num ***
+ALTER TABLE stu ADD num INT NOT NULL UNIQUE COMMENT '身份证' FIRST ;
+DESC  stu;
+
+--- 把刚才添加的列都删掉(危险,不代表生产操作) ***
+ALTER TABLE stu DROP num;
+DESC stu;
+ALTER TABLE stu DROP qq;
+ALTER TABLE stu DROP wechat;
+
+--- 修改sname数据类型的属性 ***
+DESC stu;
+ALTER TABLE stu MODIFY sname VARCHAR(64) NOT NULL COMMENT '姓名';
+
+--- 将gender 改为 sex 数据类型改为 CHAR 类型 ***
+ALTER TABLE stu  CHANGE gender sex CHAR(4) NOT NULL COMMENT '性别';
+
+
+7.4 DCL 
+grant 
+revoke
+
+7.5 DML 
+-- insert 
+DESC stu;
+
+--- 最偷懒
+INSERT stu VALUES(1,'zs',18,'m',NOW());
+SELECT * FROM stu;
+--- 最规范
+INSERT INTO stu(id,sname,age,sex,intime)
+VALUES (2,'ls',19,'f',NOW());
+--- 针对性的录入数据
+INSERT INTO stu(sname,age,sex)
+VALUES ('w5',11,'m');
+
+--- 一次性录入多行
+INSERT INTO stu(sname,age,sex)
+VALUES 
+('aa',11,'m'),
+('bb',12,'f'),
+('cc',13,'m');
+
+-- update(一定要加where条件)
+UPDATE stu SET sname='aaa';
+SELECT * FROM stu;
+UPDATE stu SET sname='bb' WHERE id=6;
+
+-- delete (一定要有where条件)
+DELETE FROM stu;
+DELETE FROM stu WHERE id=9;
+
+-- 生产中屏蔽delete功能
+--- 使用update替代delete 
+ALTER TABLE stu ADD is_del TINYINT DEFAULT 0 ;
+UPDATE stu SET is_del=1 WHERE id=7;
+SELECT * FROM stu WHERE is_del=0;
+
+
+
+7.6 作业
+use school
+
+student ：学生表
+sno：    学号
+sname：学生姓名
+sage： 学生年龄
+ssex： 学生性别
+
+
+teacher ：教师表
+tno：     教师编号
+tname：教师名字
+
+
+course ：课程表
+cno：  课程编号
+cname：课程名字
+tno：  教师编号
+
+score  ：成绩表
+sno：  学号
+cno：  课程编号
+score：成绩
+
+
+INSERT INTO student(sno,sname,sage,ssex)
+VALUES (1,'zhang3',18,'m');
+
+INSERT INTO student(sno,sname,sage,ssex)
+VALUES
+(2,'zhang4',18,'m'),
+(3,'li4',18,'m'),
+(4,'wang5',19,'f');
+
+INSERT INTO student
+VALUES
+(5,'zh4',18,'m'),
+(6,'zhao4',18,'m'),
+(7,'ma6',19,'f');
+
+INSERT INTO student(sname,sage,ssex)
+VALUES
+('oldboy',20,'m'),
+('oldgirl',20,'f'),
+('oldp',25,'m');
+
+
+INSERT INTO teacher(tno,tname) VALUES
+(101,'oldboy'),
+(102,'hesw'),
+(103,'oldguo');
+
+DESC course;
+INSERT INTO course(cno,cname,tno)
+VALUES
+(1001,'linux',101),
+(1002,'python',102),
+(1003,'mysql',103);
+
+DESC sc;
+INSERT INTO sc(sno,cno,score)
+VALUES
+(1,1001,80),
+(1,1002,59),
+(2,1002,90),
+(2,1003,100),
+(3,1001,99),
+(3,1003,40),
+(4,1001,79),
+(4,1002,61),
+(4,1003,99),
+(5,1003,40),
+(6,1001,89),
+(6,1003,77),
+(7,1001,67),
+(7,1003,82),
+(8,1001,70),
+(9,1003,80),
+(10,1003,96);
+
+SELECT * FROM student;
+SELECT * FROM teacher;
+SELECT * FROM course;
+SELECT * FROM sc;
+
+
+
+
+
+
+
+
+	

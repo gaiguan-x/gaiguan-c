@@ -1,0 +1,526 @@
+#一、K8s快速部署
+#1. 节点规划
+```
+k8s-m :10.0.0.11
+k8s-n1 :10.0.0.12
+k8s-n2 :10.0.0.13
+```
+#2.所有节点安装docker环境及依赖
+##2.1 上传docker-k8s.zip软件到各节点/opt,并解压
+##2.2 进入目录进行安装
+```
+cd /opt/docker-k8s 
+yum localinstall -y *.rpm
+```
+#3.master端软件安装
+##3.1 上传k8s-master.zip到/opt,并解压 
+##3.2 进入目录并安装
+```
+cd /opt/k8s-master
+yum localinstall -y *.rpm 
+```
+
+#4.node节点软件安装
+##4.1 上传k8s-node到两个node节点/opt并解压
+##4.2 进入目录进行安装
+```
+cd /opt/k8s-node 
+yum localinstall -y *.rpm
+```
+#5.配置主节点ETCD
+```
+vim /etc/etcd/etcd.conf
+ETCD_LISTEN_CLIENT_URLS="http://0.0.0.0:2379"
+ETCD_ADVERTISE_CLIENT_URLS="http://10.0.0.11:2379"
+
+
+重启服务并测试
+ systemctl restart etcd.service
+ systemctl enable etcd.service
+ etcdctl set name oldguo
+ etcdctl get name
+```
+#6.配置Master节点
+```
+vim /etc/kubernetes/apiserver 
+KUBE_API_ADDRESS="--insecure-bind-address=0.0.0.0"
+KUBE_API_PORT="--port=8080"
+KUBE_ETCD_SERVERS="--etcd-servers=http://10.0.0.11:2379"
+KUBE_SERVICE_ADDRESSES="--service-cluster-ip-range=10.254.0.0/16"
+KUBE_ADMISSION_CONTROL="--admission-control=NamespaceLifecycle,NamespaceExists,LimitRanger,SecurityContextDeny,ResourceQuota"
+
+vim /etc/kubernetes/config
+
+重启服务
+systemctl enable kube-apiserver.service
+systemctl start kube-apiserver.service
+systemctl enable kube-controller-manager.service
+systemctl start kube-controller-manager.service
+systemctl enable kube-scheduler.service
+systemctl start kube-scheduler.service
+```
+
+#7.node节点配置
+```
+vim /etc/kubernetes/config 
+
+KUBE_MASTER="--master=http://10.0.0.11:8080"
+
+node1:
+vim /etc/kubernetes/kubelet
+KUBELET_ADDRESS="--address=10.0.0.12"
+KUBELET_HOSTNAME="--hostname-override=10.0.0.12"
+KUBELET_API_SERVER="--api-servers=http://10.0.0.11:8080"
+
+node2:
+vim /etc/kubernetes/kubelet
+KUBELET_ADDRESS="--address=10.0.0.13"
+KUBELET_HOSTNAME="--hostname-override=10.0.0.13"
+KUBELET_API_SERVER="--api-servers=http://10.0.0.11:8080"
+
+
+重启服务
+systemctl enable kubelet.service
+systemctl start kubelet.service
+systemctl enable kube-proxy.service
+systemctl start kube-proxy.service
+```
+
+#8.验证节点状态
+```
+[root@k8s-m ~]# kubectl get nodes
+
+```
+
+#9.所有节点配置flannel网络
+```
+所有节点:
+yum install flannel -y
+sed -i 's#http://127.0.0.1:2379#http://10.0.0.11:2379#g' /etc/sysconfig/flanneld
+
+master节点：
+etcdctl mk /atomic.io/network/config '{ "Network": "172.16.0.0/16" }'
+etcdctl get /atomic.io/network/config 
+
+{ "Network": "172.16.0.0/16" }
+
+systemctl enable flanneld.service 
+systemctl start flanneld.service 
+service docker restart
+systemctl restart kube-apiserver.service
+systemctl restart kube-controller-manager.service
+systemctl restart kube-scheduler.service
+ifconfig -a
+
+node节点：
+systemctl enable flanneld.service 
+systemctl start flanneld.service 
+service docker restart
+systemctl restart kubelet.service
+systemctl restart kube-proxy.service
+```
+
+#10.配置master为镜像仓库
+
+```
+#master节点
+vim /etc/sysconfig/docker
+OPTIONS='--selinux-enabled --log-driver=journald --signature-verification=false --registry-mirror=https://registry.docker-cn.com --insecure-registry=10.0.0.11:5000'
+
+systemctl restart docker
+
+配置本地registry
+
+docker tag nginx 10.0.0.11:5000/oldguo/nginx:v1 
+docker run -d -p 5000:5000 --restart=always --name registry -v /opt/myregistry:/var/lib/registry  registry
+docker push 10.0.0.11:5000/oldguo/nginx:v1
+
+#node节点
+vim /etc/sysconfig/docker
+OPTIONS='--selinux-enabled --log-driver=journald --signature-verification=false --insecure-registry=10.0.0.11:5000'
+systemctl restart docker
+docker pull 10.0.0.11:5000/oldguo/nginx:v1
+
+```
+
+
+
+# 二.k8s核心资源管理
+# 1.PODS
+## 1.1 创建第一个pod
+```
+mkdir /opt/yml  -p 
+cd /opt/yml
+[root@k8s-m yml]# cat k8s_pod.yml 
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx
+  labels:
+    app: web
+spec:
+  containers:
+    - name: nginx
+      image: 10.0.0.11:5000/oldguonginx:v1
+      ports:
+        - containerPort: 80
+[root@k8s-m yml]# kubectl create -f k8s_pod.yml
+
+```
+## 1.2 查询
+```
+kubectl get pod
+kubectl get pod -o wide
+kubectl descrie pod
+```
+##报错分析
+```
+++++++++++++++++++++++++++++++++++++++++
+failed to "StartContainer" for "POD" with ErrImagePull: "image pull failed for registry.access.redhat.com/rhel7/pod-infrastructure:latest, this may be because there are no credentials on this request.  details: (open /etc/docker/certs.d/registry.access.redhat.com/redhat-ca.crt: no such file or directory)"
++++++++++++++++++++++++++++++++++++++++
+
+registry.access.redhat.com/rhel7/pod-infrastructure:latest
+++++++++++++++++++++++++++++++++++++++
+
+解决：
+master：上传准备好的容器为本地register（pod-infrastructure-latest.tar.gz）
+[root@k8s-m opt]# docker load -i pod-infrastructure-latest.tar.gz 
+[root@k8s-m opt]# docker images
+[root@k8s-m opt]# docker tag docker.io/tianyebj/pod-infrastructure:latest 10.0.0.11:5000/oldguo/pod-infrastructure:latest
+[root@k8s-m opt]# docker images
+[root@k8s-m opt]# docker push 10.0.0.11:5000/oldguo/pod-infrastructure:latest
+
+node：（所有node节点）
+[root@k8s-n1 ~]# vim /etc/kubernetes/kubelet
+KUBELET_POD_INFRA_CONTAINER="--pod-infra-container-image=10.0.0.11:5000/oldguo/pod-infrastructure:latest"
+
+systemctl restart kubelet.service
+```
+## 1.3 删除
+```
+[root@k8s-m yml]# kubectl delete pod nginx
+```
+##1.4 更新
+```
+master:
+[root@k8s-m yml]# docker pull nginx
+[root@k8s-m yml]# docker tag docker.io/nginx:latest 10.0.0.11:5000/oldguo/nginx:v2
+[root@k8s-m yml]# docker push  10.0.0.11:5000/oldguo/nginx:v2
+[root@k8s-m yml]# kubectl replace  --force -f k8s_pod.yml
+```
+
+
+## 1.5小结 
+kubectl create -f 
+kubectl get pods 
+kubectl get pods -o wide 
+kubectl get pods nginx -o wide  
+kubectl get pods  -o wide   -l app=web
+kubectl get pods  -o wide   --namespace=oldguo
+kubectl describe pods 
+kubectl delete pod nginx
+kubectl replace  --force -f k8s_pod.yml
+
+
+
+#2.RC应用
+```
+master:
+配置yml文件
+
+cat >k8s_nginx_rc.yml<<EOF
+apiVersion: v1
+kind: ReplicationController
+metadata:
+  name: nginx
+spec:
+  replicas: 3
+  selector:
+    app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: 10.0.0.11:5000/oldguo/nginx:v2
+        ports:
+EOF		
+[root@k8s-m yml]# kubectl create -f k8s_nginx_rc.yml 		
+[root@k8s-m yml]# kubectl get  rc
+[root@k8s-m yml]# kubectl delete   rc nginx
+
+副本数增删
+1.修改配置文件
+vim k8s_nginx_rc.yml
+[root@k8s-m yml]# kubectl replace  -f k8s_nginx_rc.yml
+2.kubectl edit rc nginx
+3.kubectl scale rc nginxrc --replicas=4
+
+
+滚动升级及回滚：
+cp k8s_nginx_rc.yml k8s_nginx1_rc.yml
+kubectl rolling-update nginx -f k8s_nginx1_rc.yml  --update-period=10s
+回滚即是相反操作即可。
+
+注：
+在升级过程中，可以进行回退。如果升级完成，则不可以使用这条指令进行回退。
+# kubectl rolling-update myapp-v1 -f my-app-v2-rc.yaml --update-period=10s --rollback
+
+
+RC资源功能小结:
+
+kubectl create -f  
+kubectl replace -f 
+kubectl get rc 
+kubectl scale rc RCNAME --replicas=4
+kubectl rolling-update OLDRCNAME  -f NEWRCFILE --update-period=5s
+kubectl rolling-update OLDRCNAME  NEWRCNAME --rollback 
+
+
+```
+
+
+
+# 3. deployment资源管理：
+```
+vim  k8s_nginx_dev.yml
+
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: nginx
+spec:
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: 10.0.0.11:5000/oldguo/nginx:v2
+        ports:
+        - containerPort: 80
+
+[root@k8s-m yml]# kubectl create -f k8s_nginx_dev.yml
+[root@k8s-m yml]# kubectl get deployment
+
+
+deployment滚动升级
+kubectl set image deployment/nginx nginx=10.0.0.11:5000/oldguo/nginx:v1
+kubectl rollout undo deployment/nginx
+
+实现自动pod伸缩
+[root@k8s-m yml]# kubectl autoscale deployment nginx --min=2 --max=6 --cpu-percent=80
+```
+
+HPA:
+horizontalpodautoscalers
+kubectl get horizontalpodautoscalers 
+kubectl edit horizontalpodautoscalers nginx
+
+
+# 4.Service
+```
+创建svc配置文件
+vim k8s_nginx_svc.yml
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginxsvc
+spec:
+  type: NodePort
+  ports:
+    - port: 80
+      nodePort: 30001
+  selector:
+    app: nginx
+
+[root@k8s-m yml]# kubectl create -f k8s_nginx_svc.yml 
+[root@k8s-m yml]# kubectl get svc
+[root@k8s-m yml]# curl -I 10.0.0.13:30001
+[root@k8s-m yml]# curl -I 10.0.0.12:30001
+```
+
+
+5. K8s图形化管理
+[root@k8s-m yml]# kubectl get pod --namespace=kube-system
+
+
+K8s实现wordpress项目
+PV
+master：
+yum install -y nfs-utils-*
+mkdir /data
+vim /etc/exports
+/data 10.0.0.0/24(rw,async,no_root_squash,no_all_squash)
+systemctl restart rpcbind
+systemctl restart nfs
+systemctl enable rpcbind
+systemctl enable nfs
+
+
+[root@k8s-m yml]# cat nfs_pv.yml 
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv0001
+  labels:
+    type: nfs001
+spec:
+  capacity:
+    storage: 10Gi 
+  accessModes:
+    - ReadWriteMany 
+  persistentVolumeReclaimPolicy: Recycle
+  nfs:
+    path: "/data"
+    server: 10.0.0.11
+    readOnly: false
+	
+[root@k8s-m yml]# cat nfs_pvc_mysql.yml 	
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: pvc-mysql
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi
+	  
+	  	  
+[root@k8s-m yml]# cp  nfs_pvc_mysql.yml nfs_pvc_wp.yml
+
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: pvc-wp
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi
+  selector:
+    matchLabels:
+      pv: nfs-pv2
+
+
+[root@k8s-m yml]# kubectl create -f mysql-rc.yaml 
+[root@k8s-m yml]# kubectl create -f mysql-svc.yaml  
+[root@k8s-m yml]# cat mysql-rc.yaml 
+apiVersion: v1
+kind: ReplicationController
+metadata:
+  name: mysql
+spec:
+  replicas: 1
+  selector:
+    app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+      - name: mysql
+        image: docker.io/mysql:5.7
+        ports:
+        - containerPort: 3306
+        volumeMounts:
+        - name: nfs-vol
+          mountPath: /var/lib/mysql
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          value: "somewordpress"
+        - name: MYSQL_DATABASE
+          value: "wordpress"
+        - name: MYSQL_USER
+          value: "wordpress"
+        - name: MYSQL_PASSWORD
+          value: "wordpress"
+      volumes:
+      - name: nfs-vol
+        persistentVolumeClaim:
+		  claimName: pvc-mysql
+
+[root@k8s-m yml]# cat mysql-svc.yaml 
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+spec:
+  ports:
+    - port: 3306
+  selector:
+    app: mysql
+		  
+[root@k8s-m yml]# kubectl get svc
+mysql        10.254.63.57     <none>        3306/TCP       19s		  
+		  
+
+[root@k8s-m yml]# cat myweb-rc.yaml 
+apiVersion: v1
+kind: ReplicationController
+metadata:
+  name: myweb
+spec:
+  replicas: 1
+  selector:
+    app: myweb
+  template:
+    metadata:
+      labels:
+        app: myweb
+    spec:
+      containers:
+      - name: myweb
+        image: docker.io/wordpress:latest
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: nfs-vol
+          mountPath: /var/www/html
+        env:
+        - name: WORDPRESS_DB_HOST
+          value: '10.254.9.3'
+        - name: WORDPRESS_DB_USER
+          value: 'wordpress'
+        - name: WORDPRESS_DB_PASSWORD
+          value: 'wordpress'
+      volumes:
+      - name: nfs-vol
+        persistentVolumeClaim:
+          claimName: nfs2
+
+[root@k8s-m yml]# cat myweb-svc.yaml 
+apiVersion: v1
+kind: Service
+metadata:
+  name: myweb
+spec:
+  type: NodePort
+  ports:
+    - port: 80
+      nodePort: 30008
+  selector:
+    app: myweb
+
+[root@k8s-m yml]# kubectl create -f myweb-rc.yaml 
+[root@k8s-m yml]# kubectl create -f myweb-svc.yaml 
+
+		  
+		  
+
+
+
+
+
+
+
+
+

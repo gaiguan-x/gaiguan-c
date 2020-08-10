@@ -1,0 +1,194 @@
+
+索引及执行计划
+
+1. 索引的作用
+类似于一本书中的目录,起到优化查询的作用
+2. 索引的分类(算法)
+B树    默认使用的索引类型
+R树
+Hash
+FullText 
+GIS 索引
+
+3. BTREE索引算法演变(了解)
+看图说话.
+
+4. Btree索引功能上的分类
+
+4.1 辅助索引
+(1) 提取索引列的所有值,进行排序
+(2) 将排好序的值,均匀的存放在叶子节点,进一步生成枝节点和根节点
+(3) 在叶子节点中的值,都会对应存储主键ID
+
+4.2 聚集索引
+(1)MySQL 会自动选择主键作为聚集索引列,没有主键会选择唯一键,如果都没有会生成隐藏的.
+(2)MySQL进行存储数据时,会按照聚集索引列值得顺序,有序存储数据行
+(3)聚集索引直接将原表数据页,作为叶子节点,然后提取聚集索引列向上生成枝和根
+
+
+4.3 聚集索引和辅助索引的区别
+(1) 表中任何一个列都可以创建辅助索引,在你有需要的时候,只要名字不同即可
+(2) 在一张表中,聚集索引只能有一个,一般是主键.
+(3) 辅助索引,叶子节点只存储索引列的有序值+聚集索引列值.
+(4) 聚集索引,叶子节点存储的时有序的整行数据.
+(5) MySQL 的表数据存储是聚集索引组织表
+
+
+5. 辅助索引细分
+5.1 单列辅助索引
+5.2 联合索引(覆盖索引) *****
+5.3 唯一索引
+
+
+6. 索引树高度
+索引树高度应当越低越好,一般维持在3-4最佳
+6.1 数据行数较多
+分表 : parttion  用的比较少了.
+分片,分布式架构.
+6.2 字段长度
+业务允许,尽量选择字符长度短的列作为索引列
+业务不允许,采用前缀索引.
+6.3 数据类型
+char 和 varchar 
+enum 
+
+
+7. 索引的命令操作
+
+7.1  查询索引 
+desc city;
+PRI   ==> 主键索引 
+MUL   ==> 辅助索引
+UNI   ==> 唯一索引 
+
+mysql> show index from city\G
+
+7.2 创建索引
+
+单列的辅助索引:
+mysql> alter table city add index idx_name(name);
+
+多列的联合索引:
+mysql> alter table city add index idx_c_p(countrycode,population);
+
+唯一索引: 
+mysql> alter table city add unique index uidx_dis(district);
+
+mysql> select count(district) from city;
+mysql> select count(distinct district) from city;
+
+前缀索引
+mysql> alter table city add index idx_dis(district(5));
+
+
+7.3 删除索引 
+mysql> alter table city drop index idx_name;
+mysql> alter table city drop index idx_c_p;
+mysql> alter table city drop index idx_dis;
+
+
+8. 压力测试准备:
+mysql> use test
+mysql> source /tmp/t100w.sql
+
+
+8.1 未做优化之前测试
+mysqlslap --defaults-file=/etc/my.cnf \
+--concurrency=100 --iterations=1 --create-schema='test' \
+--query="select * from test.t100w where k2='MN89'" engine=innodb \
+--number-of-queries=2000 -uroot -p123 -verbose
+
+[root@db01 ~]# mysqlslap --defaults-file=/etc/my.cnf \
+> --concurrency=100 --iterations=1 --create-schema='test' \
+> --query="select * from test.t100w where k2='MN89'" engine=innodb \
+> --number-of-queries=2000 -uroot -p123 -verbose
+mysqlslap: [Warning] Using a password on the command line interface can be insecure.
+Benchmark
+	Running for engine rbose
+	Average number of seconds to run all queries: 755.861 seconds
+	Minimum number of seconds to run all queries: 755.861 seconds
+	Maximum number of seconds to run all queries: 755.861 seconds
+	Number of clients running queries: 100
+	Average number of queries per client: 20
+
+8.2 索引优化后
+[root@db01 ~]# mysqlslap --defaults-file=/etc/my.cnf --concurrency=100 --iterations=1 --create-schema='test' --query="select * from test.t100w where k2='MN89'" engine=innodb --number-of-queries=2000 -uroot -p123 -verbose
+mysqlslap: [Warning] Using a password on the command line interface can be insecure.
+Benchmark
+	Running for engine rbose
+	Average number of seconds to run all queries: 1.678 seconds
+	Minimum number of seconds to run all queries: 1.678 seconds
+	Maximum number of seconds to run all queries: 1.678 seconds
+	Number of clients running queries: 100
+	Average number of queries per client: 20
+	
+	
+
+9. 执行计划分析
+9.1 作用
+将优化器 选择后的执行计划 截取出来.便于管理管判断语句得执行效率.
+9.2 获取执行
+desc   SQL语句
+explain SQL 语句
+mysql> 
+mysql> desc select * from test.t100w where k2='MN89';
++----+-------------+-------+------------+------+---------------+------+---------+------+---------+----------+-------------+
+| id | select_type | table | partitions | type | possible_keys | key  | key_len | ref  | rows    | filtered | Extra       |
++----+-------------+-------+------------+------+---------------+------+---------+------+---------+----------+-------------+
+|  1 | SIMPLE      | t100w | NULL       | ALL  | NULL          | NULL | NULL    | NULL | 1027638 |    10.00 | Using where |
++----+-------------+-------+------------+------+---------------+------+---------+------+---------+----------+-------------+
+
+9.3 分析执行计划
+9.3.1 table        		
+表名
+9.3.2 type				
+查询的类型:
+全表扫描	 	: ALL 
+索引扫描    	: index,range,ref,eq_ref,const(system),NULL
+
+index: 全索引扫描
+mysql> desc select countrycode  from city;
+
+range: 索引范围扫描(> < >= <= , between and ,or,in,like )
+mysql> desc select * from city where id>2000;
+mysql> desc select  * from city where countrycode like 'CH%';
+
+对于辅助索引来讲,!= 和not in等语句是不走索引的
+对于主键索引列来讲,!= 和not in等语句是走range
+
+===
+mysql> desc select  * from city where countrycode='CHN' or countrycode='USA';
+mysql> desc select  * from city where countrycode in ('CHN','USA');
+
+
+一般改写为 union all 
+desc 
+select  * from city where countrycode='CHN' 
+union all 
+select  * from city where countrycode='USA';
+
+ref: 辅助索引等值查询
+desc 
+select  * from city where countrycode='CHN' 
+union all 
+select  * from city where countrycode='USA';
+
+eq_ref : 多表连接时,子表使用主键列或唯一列作为连接条件
+A join B 
+on a.x = B.y 
+
+desc select b.name,a.name ,a.population  
+from city as a 
+join country as b 
+on a.countrycode=b.code 
+where a.population<100;
+
+const(system) : 主键或者唯一键的等值查询
+mysql> desc select * from  city where id=100;
+
+
+possible_key
+key
+key_len
+Extra
+

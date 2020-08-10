@@ -1,0 +1,183 @@
+
+MySQL基础管理-2
+
+1. MySQL的启动和关闭
+1.1 日常启停
+mysql.server start ---> mysqld_safe ---> mysqld 
+mysql.service      ---> mysqld 
+需要依赖于 /etc/my.cnf
+1.2 维护性的任务
+mysqld_safe --skip-grant-tables --skip-networking &
+我们一般会将我们需要的参数临时加到命令行.
+也会读取/etc/my.cnf的内容,但是如果冲突,命令行优先级最高
+
+[root@db01 ~]# mysqld_safe &
+[root@db01 ~]# mysqladmin -uroot -p123 shutdown 
+
+2. 初始化配置
+2.1 作用
+(1)影响数据库的启动
+(2)影响到客户端的功能
+2.2 初始化配置的方法
+(1)初始化配置文件(例如/etc/my.cnf) 
+(2)启动命令行上进行设置(例如:mysqld_safe  mysqld)
+(3)预编译时设置(仅限于编译安装时设置)
+2.3 初始化配置文件的书写格式
+[标签]
+xxx=xxx
+[标签]
+xxx=xxx
+
+2.4 配置文件标签的归类
+服务器端:
+[mysqld]
+[mysqld_safe]
+[server]
+
+客户端: 
+[mysql]
+[mysqladmin]
+[mysqldump]
+[client]
+
+
+2.5 配置文件设置样板(5.7)
+#服务器端配置
+[mysqld]
+#用户
+user=mysql   
+#软件安装目录                
+basedir=/application/mysql  
+#数据路径
+datadir=/data/mysql/data 
+#socket文件位置
+socket=/tmp/mysql.sock
+#服务器id号
+server_id=6
+#短口号
+port=3306
+#客户端配置
+[mysql]
+#socket文件位置
+socket=/tmp/mysql.sock
+
+2.6 配置文件读取顺序
+[root@db01 ~]# mysqld --help --verbose |grep my.cnf
+/etc/my.cnf /etc/mysql/my.cnf /usr/local/mysql/etc/my.cnf ~/.my.cnf 
+ 
+2.7 强制使用自定义配置文件
+--defautls-file 
+[root@db01 tmp]# mysqld_safe --defaults-file=/tmp/aa.txt &
+
+3. MySQL的连接管理
+
+3.1 mysql 命令 
+注意:提前应该将用户授权做好
+mysql> grant all on *.* to root@'10.0.0.%' identified by '123';
+TCPIP :
+mysql -uroot -p -h 10.0.0.51 -P3306 
+
+Socket  
+mysql -uroot -p -S /tmp/mysql.sock
+
+3.2 客户端工具
+sqlyog
+navicat
+
+
+4. 多实例管理
+4.1 准备多个目录
+mkdir -p /data/330{7,8,9}/data
+
+4.2 准备配置文件
+cat > /data/3307/my.cnf <<EOF
+[mysqld]
+basedir=/application/mysql
+datadir=/data/3307/data
+socket=/data/3307/mysql.sock
+log_error=/data/3307/mysql.log
+port=3307
+server_id=7
+log_bin=/data/3307/mysql-bin
+EOF
+
+cat > /data/3308/my.cnf <<EOF
+[mysqld]
+basedir=/application/mysql
+datadir=/data/3308/data
+socket=/data/3308/mysql.sock
+log_error=/data/3308/mysql.log
+port=3308
+server_id=8
+log_bin=/data/3308/mysql-bin
+EOF
+
+cat > /data/3309/my.cnf <<EOF
+[mysqld]
+basedir=/application/mysql
+datadir=/data/3309/data
+socket=/data/3309/mysql.sock
+log_error=/data/3309/mysql.log
+port=3309
+server_id=9
+log_bin=/data/3309/mysql-bin
+EOF
+
+
+4.3 初始化三套数据
+
+mv /etc/my.cnf /etc/my.cnf.bak
+mysqld --initialize-insecure  --user=mysql --datadir=/data/3307/data --basedir=/application/mysql
+mysqld --initialize-insecure  --user=mysql --datadir=/data/3308/data --basedir=/application/mysql
+mysqld --initialize-insecure  --user=mysql --datadir=/data/3309/data --basedir=/application/mysql
+
+
+4.4 systemd管理多实例
+cd /etc/systemd/system
+cp mysqld.service mysqld3307.service
+cp mysqld.service mysqld3308.service
+cp mysqld.service mysqld3309.service
+
+vim mysqld3307.service
+# 修改为:
+ExecStart=/application/mysql/bin/mysqld  --defaults-file=/data/3307/my.cnf
+vim mysqld3308.service
+# 修改为:
+ExecStart=/application/mysql/bin/mysqld  --defaults-file=/data/3308/my.cnf
+vim mysqld3309.service
+# 修改为:
+ExecStart=/application/mysql/bin/mysqld  --defaults-file=/data/3309/my.cnf
+
+[root@db01 system]# grep "ExecStart" mysqld3309.service
+ExecStart=/application/mysql/bin/mysqld --defaults-file=/data/3309/my.cnf
+[root@db01 system]# grep "ExecStart" mysqld3308.service
+ExecStart=/application/mysql/bin/mysqld --defaults-file=/data/3308/my.cnf
+[root@db01 system]# grep "ExecStart" mysqld3307.service
+ExecStart=/application/mysql/bin/mysqld --defaults-file=/data/3307/my.cnf
+[root@db01 system]# 
+
+
+4.5 授权
+chown -R mysql.mysql /data/*
+4.6 启动
+systemctl start mysqld3307.service
+systemctl start mysqld3308.service
+systemctl start mysqld3309.service
+
+4.7 验证多实例
+netstat -lnp|grep 330
+mysql -S /data/3307/mysql.sock -e "select @@server_id"
+mysql -S /data/3308/mysql.sock -e "select @@server_id"
+mysql -S /data/3309/mysql.sock -e "select @@server_id"
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,169 @@
+第二章 MySQL体系结构与管理
+
+1  MySQL C/S结构介绍 *** 
+两种连接方式：
+	TCP/IP：mysql -uroot -poldboy123 -h 10.0.0.51 -P3306
+	Socket：mysql -uroot -poldboy123 -S /tmp/mysql.sock
+	
+2 MySQL实例的构成 ***
+公司： 老板  +  经理  + 员工 + 办公区
+实例： mysqld +  master thread   + 干活的Thread  + 预分配的内存
+
+
+3 MySQL中mysqld服务器进程结构
+
+3.1 SQL语句引入
+结构化的查询语言
+DQL   数据查询语言
+DDL   数据定义语言
+DML   数据操作语言
+DCL   数据控制语言
+
+mysql> select user,host from mysql.user;
+
+3.2 连接层
+（1） 提供连接协议
+		Socket  
+		TCPIP
+（2） 验证用户名（root@localhost）密码合法性，进行匹配专门的授权表。
+
+（3） 派生一个专用连接线程（接收SQL，返回结果）
+	  mysql> show processlist;
+思考： 
+忘记密码的参数在哪做的手脚？
+--skip-grant-tables  
+--skip-networking	  
+
+3.3 SQL层（优化方面至关重要的）
+（1）验证SQL语法和SQL_MODE
+（2）验证语义
+（3）验证权限
+（4）解析器进行语句解析，生成执行计划（解析树）
+（5）优化器（各种算法，基于执行代价），根据算法，找到代价最低的执行计划。
+	代价：CPU  IO  MEM
+（6）执行器按照优化器选择执行计划，执行SQL语句，得出获取数据的方法。
+（7）提供query cache(默认不开)，一般不开，会用redis
+（8）记录操作日志（binlog），默认没开
+
+3.4 存储引擎层
+真正和磁盘打交道的一个层次
+根据SQL层提供的取数据的方法，拿到数据，返回给SQL，结构化成表，再又连接层线程返回给用户。
+
+3.5 MySQL逻辑存储结构
+库 											  ----》Linux目录
+create database wordpress charset utf8mb4;    ----》mkdir /wordpress
+show databases;							      ----》ls /
+use wordpress;								  ----》cd /wordpress
+
+表 											  ----》Linux的文件
+列（字段） 										无
+列属性											无
+数据行（记录）								  ----》Linux数据行
+表属性（元数据）							  ----》Linux 文件属性
+
+
+3.6 MySQL物理存储结构
+库： 使用FS上的目录来表示 
+表： 
+MyISAM(ext2)
+ user.frm  ： 存储的表结构（列，列属性）
+ user.MYD  :  存储的数据记录
+ user.MYI  ： 存储索引
+ 
+InnoDB(XFS)
+ time_zone.frm ： 存储的表结构（列，列属性）
+ time_zone.ibd ： 存储的数据记录和索引
+ ibdata1       :   数据字典信息
+
+3.7 innodb 段 区 页
+一般情况下（非分区表）
+一个表就是一个段
+一个段由多个区构成
+一个区在（16k），64个连续的页，1M大小
+
+4. 用户和权限管理
+
+4.1 作用 
+登录MySQL 
+管理MySQL 
+
+4.2 用户的定义
+用户名@'白名单'
+
+wordpress@'%'
+wordpress@'localhost'
+wordpress@'127.0.0.1'
+wordpress@'10.0.0.%'
+wordpress@'10.0.0.5%'
+wordpress@'10.0.0.0/255.255.254.0'
+wordpress@'10.0.%'
+
+4.3 用户的操作 
+4.3.1 建用户
+mysql> create user oldboy@'10.0.0.%' identified by '123';
+Query OK, 0 rows affected (0.00 sec)
+
+说明：
+8.0以前，可以自动创建用户并授权
+mysql> grant all on *.* to oldguo@'10.0.0.%' identified by '123';
+
+4.3.2 查询用户
+mysql> select user,host from mysql.user;
+
+4.3.3 修改用户密码
+mysql> alter user oldguo@'10.0.0.%' identified by '123456';
+
+4.3.4 删除用户
+mysql> drop user oldguo@'10.0.0.%' ;
+
+4.4 权限管理
+4.4.1 权限列表
+ALL 
+SELECT,INSERT, UPDATE, DELETE, CREATE, DROP, RELOAD, SHUTDOWN, PROCESS, FILE, REFERENCES, INDEX, ALTER, SHOW DATABASES, SUPER, CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE, REPLICATION SLAVE, REPLICATION CLIENT, CREATE VIEW, SHOW VIEW, CREATE ROUTINE, ALTER ROUTINE, CREATE USER, EVENT, TRIGGER, CREATE TABLESPACE
+
+
+with grant option
+
+4.4.2 授权命令
+grant all on *.* to oldguo@'10.0.0.%' identified by '123' with grant option;
+
+grant 权限  on 作用目标  to 用户  identified by 密码 with grant option;
+
+grant SELECT,INSERT, UPDATE, DELETE, CREATE on wordpress.* to 
+
+作用目标:
+*.*
+wordpress.* 
+worpress.t1 
+
+4.4.3 授权需求
+1. 创建一个管理员用户root，可以通过10网段，管理数据库.
+grant all on *.* to root@'10.0.0.%' identified by '123' with grant option;
+
+1. 创建一个应用用户wordpress，可以通过10网段，wordpress库下的所有表进行SELECT,INSERT, UPDATE, DELETE.
+grant SELECT,INSERT, UPDATE, DELETE on wordpress.* to wordpress@'10.0.0.%' identified by '123';
+
+4.4.4 回收权限
+show  grants for wordpress@'10.0.0.%';
+mysql> revoke delete on wordpress.*  from 'wordpress'@'10.0.0.%';
+mysql> show  grants for wordpress@'10.0.0.%';
+
+4.4.5 关于生产中开用户
+（1）如何沟通开用户
+1. 是否有邮件批复
+2. 对哪些库和表做操作
+3. 做什么操作
+4. 从什么地址来登录
+（2）开发人员找你要root用户密码？
+1. 走流程拒绝他
+2. 如果是金融类的公司
+	（1）原则上是不允许任何非DBA人员持有或申请root
+	（2）如果有人私下索要root密码，即使举报。
+
+
+
+
+
+
+
+

@@ -1,0 +1,527 @@
+上节回顾:
+
+explain使用场景
+
+key_len
+utf8mb4 
+varchar(10) :  没有not null(1)+4*10+2=43
+char(10)    :  没有not null(1)+4*10=41 
+int         :  没有有not null(1)+4=5
+用途:判断联合索引的覆盖长度,一般情况是越长越好
+
+联合索引: t1(id,k1,k2,k3)   idx(k1,k2,k3)
+1. 在where 条件中都是等值的 where k1=xx k2=xx k3=xxx
+无关where条件的顺序,只要把控建索引时,需要把唯一值较多的放在最左侧.
+2. 在条件查询中没有最左列条件时,没有K1列的查询,都是不走索引的
+意外情况: 将表中所有列建立联合,没有个列做查询条件都会走索引(了解)
+3. 如果查询中出现(> < >= <= like)
+
+a=  and b<xxx   and  c=xxx
+
+建索引时,将等值查询条件往前放,不等值的放在最后
+
+4.多子句时,  
+where c xxx order by a,b
+idx(c,a,b)
+
+不走索引情况
+=============================
+
+存储引擎
+
+1.简介
+相当于Linux文件系统，只不过比文件系统强大
+
+2、功能了解
+数据读写
+数据安全和一致性
+提高性能
+热备份
+自动故障恢复
+高可用方面支持
+等.
+
+3. 存储引擎介绍
+show  engies;
+CSV               
+MRG_MYISAM        
+MyISAM            
+BLACKHOLE         
+PERFORMANCE_SCHEMA
+MEMORY            
+ARCHIVE           
+InnoDB            
+FEDERATED      
+
+笔试题: 
+InnoDB ,MyISAM ,MEMORY,CSV
+
+默认的存储引擎:InnoDB
+
+PerconaDB:默认是XtraDB
+MariaDB:默认是InnoDB
+
+第三方的存储引擎:
+RocksDB MyRocks TokuDB
+压缩比较高,数据的插入性能高.其他功能和InnoDB没差.
+
+4. 简历案例---zabbix监控系统架构整改(真实案例)
+环境: zabbix 3.2    mariaDB 5.5  centos 7.3
+现象 : zabbix卡的要死 ,  每隔3-4个月,都要重新搭建一遍zabbix,存储空间经常爆满.
+问题 :
+1. zabbix 版本 
+2. 数据库版本
+3. zabbix数据库500G,存在一个文件里
+
+优化建议:
+1.数据库版本升级到mariaDB最新版本,zabbix升级更高版本
+2.存储引擎改为tokudb
+3.监控数据按月份进行切割(二次开发:zabbix 数据保留机制功能重写,数据库分表)
+4.关闭binlog和双1
+5.参数调整....
+优化结果:
+监控状态良好
+
+为什么?
+1. 原生态支持TokuDB,另外经过测试环境,10版本要比5.5 版本性能 高 2-3倍
+2. TokuDB:insert数据比Innodb快的多，数据压缩比要Innodb高
+3.监控数据按月份进行切割,为了能够truncate每个分区表,立即释放空间
+4.关闭binlog ----->减少无关日志的记录.
+5.参数调整...----->安全性参数关闭,提高性能.
+
+
+5. InnoDB 存储引擎核心特性说明
+事务 
+行锁
+MVCC 
+外键
+ACSR自动故障恢复
+热备
+复制(多线程,GTID,MTS)
+
+6. InnoDB个MyISAM存储引擎的替换(客户案例)
+环境: centos 5.8 ,MySQL 5.0版本,MyISAM存储引擎,网站业务(LNMP),数据量50G左右
+现象问题: 业务压力大的时候,非常卡;经历过宕机,会有部分数据丢失.
+问题分析:
+1.MyISAM存储引擎表级锁,在高并发时,会有很高锁等待
+2.MyISAM存储引擎不支持事务,在断电时,会有可能丢失数据
+职责
+1.监控锁的情况:有很多的表锁等待
+2.存储引擎查看:所有表默认是MyISAM
+解决方案:
+1.升级MySQL 5.6.10版本
+2. 迁移所有表到新环境
+3. 开启双1安全参数
+
+
+7. 存储引擎的查看(了解)
+
+7.1 查看存储引擎设置
+mysql> show engines;
+mysql> SELECT @@default_storage_engine;
+vim /etc/my.cnf
+[mysqld]
+default_storage_engine=InnoDB
+7.2 查看表存储引擎状态 
+mysql> show create table t111;
+mysql> SHOW TABLE STATUS LIKE 'CountryLanguage'\G
+mysql>select table_schema,table_name ,engine from information_schema.tables where table_schema not in ('sys','mysql','information_schema','performance_schema');
+
+
+8.存储引擎的修改
+8.1 修改存储引擎
+mysql> alter table t111 engine=innodb;
+mysql> show create table t111;  
+8.2 整理碎片
+mysql> alter table t111 engine=innodb;
+
+
+
+平常处理过的MySQL问题--碎片处理
+环境:centos7.4,MySQL 5.7.20,InnoDB存储引擎
+业务特点:数据量级较大,经常需要按月删除历史数据.
+问题:磁盘空间占用很大,不释放
+处理方法:
+以前:将数据逻辑导出,手工truncate表,然后导入进去
+现在:
+对表进行按月进行分表(partition,中间件)
+业务替换为truncate方式
+定期进行碎片整理
+
+8.3 批量替换zabbix 100多张  innodb为tokudb
+alter table zabbix.a  engine=tokudb;
+select concat("alter table ",table_schema,".",table_name,"  engine=tokudb;") from information_schema.tables 
+where table_schema='zabbix';
+
+
+9. InnoDB存储引擎物理存储结构
+
+9.0 最直观的存储方式(/data/mysql/data)
+
+ibdata1：系统数据字典信息(统计信息)，UNDO表空间等数据
+ib_logfile0 ~ ib_logfile1: REDO日志文件，事务日志文件。
+ibtmp1： 临时表空间磁盘位置，存储临时表
+frm：存储表的列信息
+ibd：表的数据行和索引
+
+
+9.1 表空间(Tablespace)
+
+9.1.0 表空间数据问题
+ibdata1 : 整个库的统计信息+Undo   *****
+ibd	    : 数据行和索引
+
+9.1.1 共享表空间(ibdata1~N)
+5.5 版本的默认模式,5.6中转换为了独立表空间 
+需要将所有数据存储到同一个表空间中 ，管理比较混乱
+5.5版本出现的管理模式，也是默认的管理模式。
+5.6版本以，共享表空间保留，只用来存储:数据字典信息,undo,临时表。
+5.7 版本,临时表被独立出来了
+8.0版本,undo也被独立出去了
+
+具体变化参考官方文档:
+https://dev.mysql.com/doc/refman/5.6/en/innodb-architecture.html
+https://dev.mysql.com/doc/refman/5.7/en/innodb-architecture.html
+https://dev.mysql.com/doc/refman/5.8/en/innodb-architecture.html
+
+共享表空间设置(在搭建MySQL时，初始化数据之前设置到参数文件中)
+[(none)]>select @@innodb_data_file_path;
+[(none)]>show variables like '%extend%';
+innodb_data_file_path=ibdata1:512M:ibdata2:512M:autoextend
+innodb_autoextend_increment=64
+
+例如: *****
+mysqld --initialize-insecure --user=mysql --basedir=xxxxxx......
+innodb_data_file_path=ibdata1:512M:ibdata2:512M:autoextend
+
+9.1.2 独立表空间 *****
+从5.6，默认表空间不再使用共享表空间，替换为独立表空间。
+主要存储的是用户数据
+存储特点为：一个表一个ibd文件，存储数据行和索引信息
+
+
+9.1.3 最终结论：
+一张InnoDB表= frm+idb+ibdata1 
+MySQL的存储引擎日志：
+Redo Log: ib_logfile0  ib_logfile1，重做日志
+Undo Log: ibdata1 ibdata2(存储在共享表空间中)，回滚日志
+
+临时表:ibtmp1，在做join union操作产生临时数据，用完就自动清理
+
+
+9.1.4 独立表空间设置问题
+db01 [(none)]>select @@innodb_file_per_table;
++-------------------------+
+| @@innodb_file_per_table |
++-------------------------+
+|                      1 |
++-------------------------+
+
+9.1.5 独立表空间迁移
+(1)创建和原表结构一致的空表
+(2)将空表的ibd文件删除
+alter table city dicard tablespace;
+(3)将原表的ibd拷贝过来,并且修改权限
+(4)将原表ibd进行导入
+alter table city import tablespace;
+
+
+
+
+9.2 共享表空间
+
+需要将所有数据存储到同一个表空间中 ，管理比较混乱
+5.5版本出现的管理模式，也是默认的管理模式。
+5.6版本以，共享表空间保留，只用来存储:数据字典信息,undo,临时表。
+5.7 版本,临时表被独立出来了
+8.0版本,undo也被独立出去了
+
+
+具体变化参考官方文档:
+https://dev.mysql.com/doc/refman/5.6/en/innodb-architecture.html
+https://dev.mysql.com/doc/refman/5.7/en/innodb-architecture.html
+https://dev.mysql.com/doc/refman/8.0/en/innodb-architecture.html
+
+共享表空间设置
+
+共享表空间设置(在搭建MySQL时，初始化数据之前设置到参数文件中)
+[(none)]>select @@innodb_data_file_path;
+[(none)]>show variables like '%extend%';
+innodb_data_file_path=ibdata1:512M:ibdata2:512M:autoextend
+innodb_autoextend_increment=64
+
+9.3 独立表空间
+从5.6，默认表空间不再使用共享表空间，替换为独立表空间。
+主要存储的是用户数据
+存储特点为：一个表一个ibd文件，存储数据行和索引信息
+基本表结构元数据存储：
+xxx.frm
+最终结论：
+      元数据            数据行+索引
+mysql表数据    =（ibdataX+frm）+ibd(段、区、页)
+        DDL             DML+DQL
+
+MySQL的存储引擎日志：
+Redo Log: ib_logfile0  ib_logfile1，重做日志
+Undo Log: ibdata1 ibdata2(存储在共享表空间中)，回滚日志
+临时表:ibtmp1，在做join union操作产生临时数据，用完就自动
+
+9.4 独立表空间设置问题
+db01 [(none)]>select @@innodb_file_per_table;
++-------------------------+
+| @@innodb_file_per_table |
++-------------------------+
+|                      1 |
++-------------------------+
+alter table city dicard tablespace;
+alter table city import tablespace;
+
+
+9.5 学员真实故障案例
+9.5.1 案例背景:
+硬件及软件环境:
+联想服务器（IBM） 
+磁盘500G 没有raid
+centos 6.8
+mysql 5.6.33  innodb引擎  独立表空间
+备份没有，日志也没开
+
+开发用户专用库:
+jira(bug追踪) 、 confluence(内部知识库)    ------>LNMT
+
+9.5.2 故障描述:
+断电了，启动完成后“/” 只读
+fsck  重启,系统成功启动,mysql启动不了。
+结果：confulence库在  ， jira库不见了
+
+9.5.3 学员求助内容:
+求助：
+这种情况怎么恢复？
+我问：
+有备份没
+求助：
+连二进制日志都没有，没有备份，没有主从
+我说：
+没招了，jira需要硬盘恢复了。
+
+求助：
+1、jira问题拉倒中关村了
+2、能不能暂时把confulence库先打开用着
+将生产库confulence，拷贝到1:1虚拟机上/var/lib/mysql,直接访问时访问不了的
+
+问：有没有工具能直接读取ibd
+
+我说：我查查，最后发现没有
+
+
+9.5.5 我想出一个办法来：
+
+表空间迁移:
+create table xxx
+alter table  confulence.t1 discard tablespace;
+alter table confulence.t1 import tablespace;
+虚拟机测试可行。
+
+
+9.5.6 处理问题思路:
+confulence库中一共有107张表。
+1、创建107和和原来一模一样的表。
+他有2016年的历史库，我让他去他同时电脑上 mysqldump备份confulence库
+mysqldump -uroot -ppassw0rd -B  confulence --no-data >test.sql
+拿到你的测试库，进行恢复
+到这步为止，表结构有了。
+2、表空间删除。
+select concat('alter table ',table_schema,'.'table_name,' discard tablespace;') from information_schema.tables where table_schema='confluence' into outfile '/tmp/discad.sql';
+source /tmp/discard.sql
+执行过程中发现，有20-30个表无法成功。主外键关系
+很绝望，一个表一个表分析表结构，很痛苦。
+set foreign_key_checks=0 跳过外键检查。
+把有问题的表表空间也删掉了。
+3、拷贝生产中confulence库下的所有表的ibd文件拷贝到准备好的环境中
+select concat('alter table ',table_schema,'.'table_name,' import tablespace;') from information_schema.tables where table_schema='confluence' into outfile '/tmp/import.sql';
+4、验证数据
+表都可以访问了，数据挽回到了出现问题时刻的状态（2-8）
+
+
+10. InnoDB 核心特性***** 
+
+10.1 事务
+10.1.1 事务的ACID特性
+Atomic（原子性）
+所有语句作为一个单元全部成功执行或全部取消。不能出现中间状态。
+
+Consistent（一致性）
+如果数据库在事务开始时处于一致状态，则在执行该事务期间将保留一致状态。
+
+Isolated（隔离性）
+事务之间不相互影响。
+
+Durable（持久性）
+事务成功完成后，所做的所有更改都会准确地记录在数据库中。所做的更改不会丢失。
+
+10.1.2 事务的生命周期（标准的事务控制语句）
+
+(1) 如何开启事务
+begin ;
+
+(2) 标准的事务语句
+DML : 
+insert  
+update  
+delete
+mysql> use world;
+mysql> update city set countrycode='CHN' where id=1;
+mysql> update city set countrycode='CHN' where id=2;
+mysql> update city set countrycode='CHN' where id=3;
+
+(3)事务的结束 
+提交:
+commit;
+回滚:
+rollback;
+
+10.1.3 自动提交机制(autocommit)
+mysql> select @@autocommit;
++--------------+
+| @@autocommit |
++--------------+
+|            1 |
++--------------+
+
+在线修改参数:
+(1) 会话级别:  
+mysql> set autocommit=0;
+及时生效,只影响当前登录会话
+(2)全局级别:
+mysql> set global autocommit=0;  
+断开窗口重连后生效,影响到所有新开的会话
+(3)永久修改(重启生效) 
+vim /etc/my.cnf 
+autocommit=0
+
+10.1.4 隐式提交的情况
+触发隐式提交的语句：
+begin 
+a
+b
+create database
+导致提交的非事务语句：
+DDL语句： （ALTER、CREATE 和 DROP）
+DCL语句： （GRANT、REVOKE 和 SET PASSWORD）
+锁定语句：（LOCK TABLES 和 UNLOCK TABLES）
+导致隐式提交的语句示例：
+TRUNCATE TABLE
+LOAD DATA INFILE
+SELECT FOR UPDATE
+
+10.2 事务的ACID如何保证?
+
+10.2.1 一些概念名词
+redo log: 重做日志
+ib_logfile0~1   默认50M  , 轮询使用
+
+redo log buffer :
+redo内存区域
+ibd   :
+存储 数据行和索引 
+
+data buffer pool :
+缓冲区池,数据和索引的缓冲
+LSN : 日志序列号 
+ibd ,redolog ,data buffer pool, redo buffer
+MySQL 每次数据库启动,都会比较磁盘数据页和redolog的LSN,必须要求两者LSN一致数据库才能正常启动
+WAL (持久化):
+write ahead log 日志优先写的方式实现持久化
+日志是优先于数据写入磁盘的.
+脏页: 
+内存脏页,内存中发生了修改,没写入到磁盘之前,我们把内存页称之为脏页.
+CKPT:
+Checkpoint,检查点,就是将脏页刷写到磁盘的动作
+
+TXID: 
+事务号,InnoDB会为每一个事务生成一个事务号,伴随着整个事务.
+
+10.2.2 事务日志-- redo 重做日志 
+作用?
+主要功能  保证 "D"  ,  A C   也有一定得作用
+(1)记录了内存数据页的变化.
+(2)提供快速的持久化功能(WAL)
+(3)CSR过程中实现前滚的操作(磁盘数据页和redo日志LSN一致)
+
+redo日志位置
+redo的日志文件：iblogfile0 iblogfile1
+
+redo buffer
+redo的buffer:数据页的变化信息+数据页当时的LSN号
+
+redo的刷写策略
+commit;
+刷新当前事务的redo buffer到磁盘
+还会顺便将一部分redo buffer中没有提交的事务日志也刷新到磁盘
+MySQL : 在启动时,必须保证redo日志文件和数据文件LSN必须一致, 如果不一致就会触发CSR,最终保证一致
+
+情况一:
+我们做了一个事务,begin;update;commit.
+1.在begin ,会立即分配一个TXID=tx_01.
+2.update时,会将需要修改的数据页(dp_01,LSN=101),加载到data buffer中
+3.DBWR线程,会进行dp_01数据页修改更新,并更新LSN=102
+4.LOGBWR日志写线程,会将dp_01数据页的变化+LSN+TXID存储到redobuffer
+5. 执行commit时,LGWR日志写线程会将redobuffer信息写入redolog日志文件中,基于WAL原则,
+在日志完全写入磁盘后,commit命令才执行成功,(会将此日志打上commit标记)
+6.假如此时宕机,内存脏页没有来得及写入磁盘,内存数据全部丢失
+7.MySQL再次重启时,必须要redolog和磁盘数据页的LSN是一致的.但是,此时dp_01,TXID=tx_01磁盘是LSN=101,dp_01,TXID=tx_01,redolog中LSN=102
+MySQL此时无法正常启动,MySQL触发CSR.在内存追平LSN号,触发ckpt,将内存数据页更新到磁盘,从而保证磁盘数据页和redolog LSN一值.这时MySQL正长启动
+以上的工作过程,我们把它称之为基于REDO的"前滚操作"
+
+10.2.3 undo
+回滚日志.
+作用: 在 ACID特性中,主要保证A的特性,同时对CI也有一定功效
+
+(1)记录了数据修改之前的状态
+(2)rollback 将内存的数据修改恢复到修改之前
+(3)在CSR中实现未提交数据的回滚操作
+(4)实现一致性快照,配合隔离级别保证MVCC,读和写的操作不会互相阻塞
+
+
+10.2.4 锁
+实现了事务之间的隔离功能,InnoDB中实现的是行级锁.
+row-level lock 
+gap 
+next-lock
+
+
+10.2.5 隔离级别 
+RU  : 读未提交,可脏读,一般部议叙出现
+RC  : 读已提交,可能出现幻读,可以防止脏读.
+RR  : 可重复读,功能是防止"幻读"现象 ,利用的是undo的快照技术+GAP(间隙锁)+NextLock(下键锁)
+SR   : 可串行化,可以防止死锁,但是并发事务性能较差
+补充: 在RC级别下,可以减轻GAP+NextLock锁的问题,但是会出现幻读现象,一般在为了读一致性会在正常select后添加for update语句.但是,请记住执行完一定要commit 否则容易出现所等待比较严重.
+
+transaction_isolation=read-uncommitted
+transaction_isolation=read-committed
+transaction_isolation=REPEATABLE-READ
+MVCC   --->   undo 快照
+
+
+RU  会出现脏读 , 
+RC 会出现不可重复读 ,也会出现幻读.
+RR 通过MVCC基础解决了不可重复读,但是有可能会出现幻读现象
+在RR模式下,GAP和Next-lock进行避免幻读现象,必须索引支持
+
+
+
+10.2.65 InnoDB核心参数
+
+
+
+
+
+
+
+
+
+
+
+
+
+

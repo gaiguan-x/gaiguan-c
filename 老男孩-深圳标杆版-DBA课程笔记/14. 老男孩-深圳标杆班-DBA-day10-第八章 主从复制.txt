@@ -1,0 +1,381 @@
+1. 上节回顾
+
+1.1 XBK  --redo-only  , XBK恢复的过程
+
+full(日)+inc1(1)+inc2(2)     binlog
+(1)base full 整理 
+--apply-log --redo-only 
+(2)inc1 合并和整理 
+--apply-log --redo-only   --incremental-dir=inc1 
+(3)inc2
+--apply-log    --incremental-dir=inc2 
+(4) 合并后的 full 整理 
+--apply-log 
+
+1.2 迁移   A 5.6  ----> B 5.7
+(1) 备份 A 的数据 ,最近的一次全备,进行upgrade
+(2) 不断追加 缺失的binlog 到B库
+(3) 追加的差不多了,停主库,把缺失binlog进行恢复
+(4) 在B库 进行基础功能测试, 
+(5) 业务进行割接
+
+1.3 windows MySQL
+
+
+==============================
+MySQL Replication(主从复制)
+1. 职责介绍
+1. 搭建主从复制   ***
+2. 主从原理熟悉   *****
+3. 主从的故障处理 *****
+4. 主从延时 	  *****
+5. 主从的特殊架构的配置使用 ****
+6. 主从架构的演变 ****
+
+2. 主从复制介绍
+(1) 主从复制基于binlog来实现的
+(2) 主库发生新的操作,都会记录binlog
+(3) 从库取得主库的binlog进行回放
+(4) 主从复制的过程是异步
+
+
+3. 主从复制的前提 (搭建主从复制) 
+(1) 2个或以上的数据库实例
+(2) 主库需要开启二进制日志 
+(3) server_id要不同,区分不同的节点
+(4) 主库需要建立专用的复制用户 (replication slave)
+(5) 从库应该通过备份主库,恢复的方法进行"补课"
+(6) 人为告诉从库一些复制信息(ip port user pass,二进制日志起点)
+(7) 从库应该开启专门的复制线程
+ 
+4. 主从复制搭建过程(生产)
+4.1 准备多实例
+[root@db01 data]# pkill mysqld 
+[root@db01 data]# systemctl start mysqld3307
+[root@db01 data]# \rm -rf /data/3308/data/*
+[root@db01 3308]# \rm -rf /data/3308/mysql-bin.*
+[root@db01 3308]# mysqld --initialize-insecure --user=mysql --basedir=/application/mysql --datadir=/data/3308/data
+[root@db01 data]# systemctl start mysqld3308
+[root@db01 data]# mysql -S /data/3308/mysql.sock -e "select @@port"
+[root@db01 data]# mysql -uroot -p123 -S /data/3307/mysql.sock -e "select @@port";
+4.2 检查配置文件
+主库: 二进制日志是否开启
+两个节点: server_id
+[root@db01 data]# cat /data/3308/my.cnf 
+[mysqld]
+basedir=/application/mysql
+datadir=/data/3308/data
+socket=/data/3308/mysql.sock
+log_error=/data/3308/mysql.log
+port=3308
+server_id=8
+log_bin=/data/3308/mysql-bin
+
+[root@db01 data]# cat /data/3307/my.cnf 
+[mysqld]
+basedir=/application/mysql
+datadir=/data/3307/data
+socket=/data/3307/mysql.sock
+log_error=/data/3307/mysql.log
+port=3307
+server_id=7
+log_bin=/data/3307/mysql-bin
+[root@db01 data]# 
+
+4.3 主库创建复制用户
+[root@db01 ~]# mysql -uroot -p123 -S /data/3307/mysql.sock -e "grant replication slave on *.* to repl@'10.0.0.%' identified by '123'"
+
+
+4.4 "补课"
+主: 
+[root@db01 ~]# mysqldump -uroot -p123 -S /data/3307/mysql.sock -A --master-data=2 --single-transaction -R -E --triggers >/tmp/full.sql
+
+从:
+[root@db01 ~]# mysql -S /data/3308/mysql.sock 
+mysql> set sql_log_bin=0;
+mysql> source /tmp/full.sql
+
+4.5 告诉从库信息
+help change master to
+[root@db01 ~]# mysql -S /data/3308/mysql.sock 
+
+CHANGE MASTER TO 
+MASTER_HOST='10.0.0.51',
+MASTER_USER='repl',
+MASTER_PASSWORD='123',
+MASTER_PORT=3307,
+MASTER_LOG_FILE='mysql-bin.000004',
+MASTER_LOG_POS=444,
+MASTER_CONNECT_RETRY=10;
+
+
+vim /tmp/full.sql
+-- CHANGE MASTER TO MASTER_LOG_FILE='mysql-bin.000004', MASTER_LOG_POS=444;
+
+4.6 从库开启复制线程(IO,SQL)
+[root@db01 ~]# mysql -S /data/3308/mysql.sock 
+mysql> start slave;
+
+
+4.7 检查主从复制状态
+[root@db01 ~]# mysql -S /data/3308/mysql.sock 
+mysql> show slave status \G
+             Slave_IO_Running: Yes
+            Slave_SQL_Running: Yes
+
+主库:
+[root@db01 ~]# mysql -uroot -p123 -S /data/3307/mysql.sock -e "create database alexsb"
+从库:
+[root@db01 world]# mysql -S /data/3308/mysql.sock -e "show databases"
+
+
+5. 主从复制原理 *****
+
+5.1 主从复制中涉及的文件
+主库: 
+	binlog 
+从库: 
+	relaylog  中继日志
+	master.info  主库信息文件
+	relaylog.info relaylog应用的信息
+
+5.2 主从复制中涉及的线程
+主库:
+	Binlog_Dump Thread : DUMP_T
+从库: 
+	SLAVE_IO_THREAD     : IO_T
+	SLAVE_SQL_THREAD    : SQL_T
+
+5.3 主从复制工作(过程)原理
+1.从库执行change master to 命令(主库的连接信息+复制的起点)
+2.从库会将以上信息,记录到master.info文件
+3.从库执行 start slave 命令,立即开启IO_T和SQL_T
+4. 从库 IO_T,读取master.info文件中的信息
+获取到IP,PORT,User,Pass,binlog的位置信息
+5. 从库IO_T请求连接主库,主库专门提供一个DUMP_T,负责和IO_T交互
+6. IO_T根据binlog的位置信息(mysql-bin.000004 , 444),请求主库新的binlog
+7. 主库通过DUMP_T将最新的binlog,通过网络TP给从库的IO_T
+8. IO_T接收到新的binlog日志,存储到TCP/IP缓存,立即返回ACK给主库,并更新master.info
+9.IO_T将TCP/IP缓存中数据,转储到磁盘relaylog中.
+10. SQL_T读取relay.info中的信息,获取到上次已经应用过的relaylog的位置信息
+11. SQL_T会按照上次的位置点回放最新的relaylog,再次更新relay.info信息
+12. 从库会自动purge应用过relay进行定期清理
+补充说明:
+一旦主从复制构建成功,主库当中发生了新的变化,都会通过dump_T发送信号给IO_T,增强了主从复制的实时性.
+
+5.4 主从复制监控 ****
+命令:
+show slave status \G
+
+主库有关的信息(master.info):
+Master_Host: 10.0.0.51
+Master_User: repl
+Master_Port: 3307
+Connect_Retry: 10
+*******************************
+Master_Log_File: mysql-bin.000004
+Read_Master_Log_Pos: 609
+*******************************
+
+从库relay应用信息有关的(relay.info):
+Relay_Log_File: db01-relay-bin.000002
+Relay_Log_Pos: 320
+Relay_Master_Log_File: mysql-bin.000004
+
+从库线程运行状态(排错)
+Slave_IO_Running: Yes
+Slave_SQL_Running: Yes
+Last_IO_Errno: 0
+Last_IO_Error: 
+Last_SQL_Errno: 0
+Last_SQL_Error: 			
+			
+过滤复制有关的信息:			
+Replicate_Do_DB: 
+Replicate_Ignore_DB: 
+Replicate_Do_Table: 
+Replicate_Ignore_Table: 
+Replicate_Wild_Do_Table: 
+Replicate_Wild_Ignore_Table: 
+ 
+从库延时主库的时间(秒):  
+Seconds_Behind_Master: 0
+				
+延时从库:
+SQL_Delay: 0
+SQL_Remaining_Delay: NULL
+
+GTID复制有关的状态信息		  
+Retrieved_Gtid_Set: 
+Executed_Gtid_Set: 
+Auto_Position: 0
+
+5.5 主从复制故障 *****
+5.5.1 IO 线程故障 
+(1) 连接主库: connecting
+
+网络,连接信息错误或变更了,防火墙,连接数上线
+排查思路:
+1. 使用复制用户手工登录
+[root@db01 data]# mysql -urepl -p12321321 -h 10.0.0.51 -P 3307
+mysql: [Warning] Using a password on the command line interface can be insecure.
+ERROR 1045 (28000): Access denied for user 'repl'@'db01' (using password: YES)
+[root@db01 data]# mysql -urep -p123 -h 10.0.0.51 -P 3307
+mysql: [Warning] Using a password on the command line interface can be insecure.
+ERROR 1045 (28000): Access denied for user 'rep'@'db01' (using password: YES)
+[root@db01 data]# mysql -urepl -p123 -h 10.0.0.52 -P 3307
+mysql: [Warning] Using a password on the command line interface can be insecure.
+ERROR 2003 (HY000): Can't connect to MySQL server on '10.0.0.52' (113)
+[root@db01 data]# mysql -urepl -p123 -h 10.0.0.51 -P 3309
+mysql: [Warning] Using a password on the command line interface can be insecure.
+ERROR 2003 (HY000): Can't connect to MySQL server on '10.0.0.51' (111)
+[root@db01 data]# 
+
+解决: 
+1. stop slave 
+2. reset slave all;
+3. change master to 
+4. start slave
+
+(2) 请求Binlog
+
+binlog 没开
+binlog 损坏,不存在
+
+主库 reset master 处理:
+从库 
+stop slave ;
+reset slave all; 
+CHANGE MASTER TO 
+MASTER_HOST='10.0.0.51',
+MASTER_USER='repl',
+MASTER_PASSWORD='123',
+MASTER_PORT=3307,
+MASTER_LOG_FILE='mysql-bin.000001',
+MASTER_LOG_POS=154,
+MASTER_CONNECT_RETRY=10;
+start slave;
+
+(3) 存储binlog到relaylog
+
+
+5.5.2 SQL线程故障
+relay-log损坏
+回放relaylog
+研究一条SQL语句为什么执行失败?
+insert delete  update     ---> t1 表 不存在
+create table  oldboy     ---> oldboy 已存在
+约束冲突(主键,唯一键,非空..)
+
+合理处理方法: 
+把握一个原则,一切以主库为准进行解决.
+如果出现问题,尽量进行反操作
+最直接稳妥办法,重新构建主从
+
+
+暴力的解决方法
+方法一：
+
+stop slave; 
+set global sql_slave_skip_counter = 1;
+start slave;
+
+#将同步指针向下移动一个，如果多次不同步，可以重复操作。
+start slave;
+
+方法二：
+/etc/my.cnf
+slave-skip-errors = 1032,1062,1007
+
+
+常见错误代码:
+1007:对象已存在
+1032:无法执行DML
+1062:主键冲突,或约束冲突
+
+但是，以上操作有时是有风险的，最安全的做法就是重新构建主从。把握一个原则,一切以主库为主.
+
+为了很程度的避免SQL线程故障
+(1) 从库只读
+read_only
+super_read_only
+(2) 使用读写分离中间件
+atlas 
+mycat
+ProxySQL 
+MaxScale
+
+5.6 主从延时监控及原因 *****
+
+5.6.1 主库方面原因
+(1) binlog写入不及时
+sync_binlog=1
+(2) 默认情况下dump_t 是串行传输binlog *****
+在并发事务量大时或者大事务,由于dump_t 是串型工作的,导致传送日志较慢
+如何解决问题?
+必须GTID,使用Group commit方式.可以支持DUMP_T并行
+(3) 主库极其繁忙
+慢语句
+锁等待
+从库个数
+网络延时
+5.6.2 从库方面原因
+(1) 传统复制(Classic)中 *****
+如果主库并发事务量很大,或者出现大事务
+由于从库是单SQL线程,导致,不管传的日志有多少,只能一次执行一个事务.
+5.6 版本,有了GTID,可以实现多SQL线程,但是只能基于不同库的事务进行并发回放.(database) 
+5.7 版本中,有了增强的GTID,增加了seq_no,增加了新型的并发SQL线程模式(logical_clock),MTS技术
+(2) 主从硬件差异太大
+(3) 主从的参数配置
+(4) 从库和主库的索引不一致
+(5) 版本有差异
+
+
+5.6.3 主从延时的监控
+
+show slave  status\G
+Seconds_Behind_Master: 0
+
+主库方面原因的监控
+
+主库:
+mysql> show master status ;
+File: mysql-bin.000001
+Position: 1373
+
+从库
+Master_Log_File: mysql-bin.000001
+Read_Master_Log_Pos: 1373
+
+从库方面原因监控:
+
+拿了多少:
+Master_Log_File: mysql-bin.000001
+Read_Master_Log_Pos: 691688
+执行了多少:
+Relay_Log_File: db01-relay-bin.000004
+Relay_Log_Pos: 690635
+Exec_Master_Log_Pos: 691000
+Relay_Log_Space: 690635
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

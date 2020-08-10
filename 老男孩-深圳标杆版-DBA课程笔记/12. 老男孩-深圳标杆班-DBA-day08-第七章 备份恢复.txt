@@ -1,0 +1,371 @@
+﻿上节回顾
+1.1 日志 
+	binlog如何开启?
+	log_bin
+	binlog_format=row                                    ******
+		RBR
+		SBR 
+	sync_binlog=1	 每次事务提交都立即刷写binlog到磁盘 ******
+	
+	show  master status ;
+	show binlog events in ''
+	非GTID
+	mysqlbinlog  --start-position   --stop-position 
+	--base64-output=decode-rows    -vvv   (--help可以查到)	
+GTID 
+mysql> show variables like '%gtid%';
+[root@db01 data]# mysqlbinlog --help |grep gtid
+  --skip-gtids        
+  --include-gtids=''
+  --exclude-gtids=''
+
+set sql_log_bin=0;
+source ..
+
+1.2 二进制日志清理
+1.2.1 自动
+expire_logs_days=15
+设置的依据: 至少1轮全备周期长度的过期时间.
+1.2.2 手工
+mysql> help purge
+PURGE BINARY LOGS TO 'mysql-bin.000032';
+PURGE BINARY LOGS BEFORE '2008-04-02 22:46:26';
+mysql> reset master ;
+
+1.3 日志如何滚动
+flush logs;
+数据库重启
+max_binlog_size=1073741824 
+
+
+1.4 slow 
+mysql> show variables like 'slow_query_log%';
+mysql>  show variables like 'long%';
+mysql>  show variables like '%using_indexes%';
+mysqldumpslow -s c -t 10 /xxxxx
+
+真实优化案例:
+SELECT SUM(invalid_count) as invalid_count, SUM(confirm_count) as confirm_count,SUM(not_confirm_count) as not_confirm_count,SUM(total_count) as total_count
+FROM (
+	 		select count(att.LogID) as invalid_count, 0 as confirm_count,0 as not_confirm_count,0 as total_count,bp.city_id
+      FROM builder_project_info as bp
+      JOIN attendentlog as att ON bp.project_id = att.CompanyID
+      WHERE att.CompanyID in (SELECT project_id from builder_project_info WHERE city_id = 407) and  att.LogTime like "2019-06%" and att.state = 2
+      GROUP BY bp.city_id
+UNION all (
+			select 0 as invalid_count, count(att.LogID) as confirm_count,0 as not_confirm_count,0 as total_count,bp.city_id
+      FROM builder_project_info as bp
+      JOIN attendentlog as att ON bp.project_id = att.CompanyID
+      WHERE att.CompanyID in (SELECT project_id from builder_project_info WHERE city_id = 407) and  att.LogTime like "2019-06%" and att.state = 1
+      GROUP BY bp.city_id
+		)
+UNION all (
+
+			select 0 as invalid_count, 0 as confirm_count,count(att.LogID) as not_confirm_count,0 as total_count,bp.city_id
+      FROM builder_project_info as bp
+      JOIN attendentlog as att ON bp.project_id = att.CompanyID
+      WHERE att.CompanyID in (SELECT project_id from builder_project_info WHERE city_id = 407) and  att.LogTime like "2019-06%" and att.state = 0
+      GROUP BY bp.city_id
+		)
+    UNION all (
+	 select 0 as invalid_count, 0 as confirm_count,0 as not_confirm_count,count(att.LogID) as total_count,bp.city_id
+   FROM builder_project_info as bp
+   JOIN attendentlog as att ON bp.project_id = att.CompanyID
+   WHERE att.CompanyID in (SELECT project_id from builder_project_info WHERE city_id = 407) and  att.LogTime like  "2019-06%"
+   GROUP BY bp.city_id
+		)
+   ) as a
+ GROUP BY a.city_id
+
+
+desc city 
+desc country
+
+show index from city 
+
+explain 
+SELECT 
+COUNT(CASE WHEN att.state=0 THEN 1 END) AS a,
+COUNT(CASE WHEN att.state=1 THEN 1  END) AS b,
+COUNT(CASE WHEN att.state=2 THEN 1 END) AS c,
+sum(att.LogID)
+FROM builder_project_info AS bp
+JOIN attendentlog AS att ON bp.project_id = att.CompanyID
+WHERE bp.city_id=407
+AND att.LogTime  between  and  
+GROUP BY bp.city_id;
+
+
+1.5 
+脏读  : 读未提交的事务 
+
+幻读  :  RC
+
+t1 
+
+id    name 
+1	  ls 
+2     ls
+3	  ls
+4     ls
+5	  ls
+6	  ls
+7	  ls
+8	  ls
+9	  ls
+10	  ls
+
+
+
+tx1:    
+1. update t1 set name='zhangsa' where id>2
+4. commit;
+5. select * from t1; 
+id    name 
+1	  zhangsan 
+2     zhangsan
+3	  zhangsan
+4     zhangsan
+5	  zhangsan
+6	  zhangsan
+7	  zhangsan
+8	  zhangsan
+9	  zhangsan
+10	  zhangsan
+11    ls
+
+tx2:
+2. insert into t1  values (11,'ls');
+3. commit;
+
+
+innodb 核心参数  ******
+innodb_flush_log_at_trx_commit=1   
+innodb_flush_method=o_direct
+
+innodb_flush_log_at_trx_commit=0   
+innodb_flush_method=fsync
+
+
+=============================
+备份恢复
+1. 在备份恢复中的职责
+1.1  备份策略的设计
+(1) 备份周期: 
+	根据数据量.
+(2)备份工具: 
+	mysqldump (MDP) , XBK (PBK) percona Xtrabackup  ,  MEB(MySQL Enterprise BACKUP  MEB) ,mysqlbinlog
+(3)备份方式: 
+逻辑:
+全备   mysqldump 
+增量   binlog (flush logs ,cp)
+物理备份:
+全备 : XBK 
+增量 : XBK
+1.2 检查备份可用性
+crontab -l ----->
+备份脚本   ----->
+备份路径  ----->
+看备份日志,检查备份文件(大小,内容)
+
+1.3 定期的恢复演练
+
+1.4 数据恢复
+只要备份和日志是完整的,恢复到故障之前的时间点(快速)
+
+1.5 数据迁移   ***
+操作系统不同的迁移
+mysql   ->  mysql 
+其他    ->  mysql 
+mysql   ->   其他
+
+2. 备份的介绍
+
+2.1 备份的策略
+2.2 备份的工具
+2.3 备份类型
+	热备 : 对于业务影响最小   InnoDB
+	温备 : 长时间锁表备份     MyISAM
+	冷备 : 业务关闭情况下备份 
+	
+3. mysqldump  
+3.1 连接数据库 
+-u
+-p 
+-S 
+-h 
+P 
+
+3.2 基础备份参数
+-A 
+[root@db01 backup]# mysqldump -uroot -p123 -A  >/backup/full.sql
+-B
+[root@db01 backup]# mysqldump -uroot -p123 -B world oldguo wordpress >/backup/db.sql
+库  表
+[root@db01 backup]# mysqldump -uroot -p123 world city country > /backup/tab.sql
+
+
+3.3 特殊备份参数
+
+-R 存储过程和函数
+-E 事件
+--triggers 触发器
+
+--master-data=2     *****
+(1) 记录备份时刻的binlog信息
+(2) 自动锁表
+	不加--single-transaction ,温备份
+	加了--single-transaction,对于InnoDB表不锁表备份(快照备份)
+
+--single-transaction *****
+对于InnoDB的表,进行一致性快照备份,不锁表.
+
+4. 恢复案例
+
+4.1 背景环境：
+正在运行的网站系统，mysql-5.7.20 数据库，数据量50G，日业务增量1-5M。
+4.2 备份策略：
+每天23:00点，计划任务调用mysqldump执行全备脚本
+4.3 故障时间点：
+年底故障演练:模拟周三上午10点误删除数据库.
+4.4 思路：
+1、停业务，挂维护页,避免数据的二次伤害
+2、找一个临时库，恢复周二23：00全备
+3、截取周二23：00  --- 周三10点误删除之间的binlog，恢复到临时库
+4、测试可用性和完整性
+5、 
+    5.1 方法一：直接使用临时库顶替原生产库，前端应用割接到新库
+    5.2 方法二：将误删除的表导出，导入到原生产库
+6、开启业务
+处理结果：经过20分钟的处理，最终业务恢复正常
+
+4.5 故障模拟演练
+4.5.1 准备数据
+create database backup;
+use backup
+create table t1 (id int);
+insert into t1 values(1),(2),(3);
+commit;
+rm -rf /backup/*
+
+4.5.2 周二 23：00全备
+
+mysqldump -uroot -p123 -A  -R  --triggers --set-gtid-purged=OFF --master-data=2  --single-transaction|gzip > /backup/full_$(date +%F).sql.gz
+
+
+4.5.3 模拟周二 23：00到周三 10点之间数据变化
+use backup
+insert into t1 values(11),(22),(33);
+commit;
+create table t2 (id int);
+insert into t2 values(11),(22),(33);
+commit;
+
+4.5.4 模拟故障,删除表(只是模拟，不代表生产操作)
+drop database backup;
+
+4.6 恢复过程
+4.6.1 准备临时数据库（多实例3307）
+systemctl start mysqld3307
+4.6.2 准备备份
+（1）准备全备：
+cd /backup
+gunzip full_2018-10-14.sql.gz 
+（2）截取二进制日志
+-- CHANGE MASTER TO MASTER_LOG_FILE='mysql-bin.000002', MASTER_LOG_POS=753;
+753
+1519 
+mysqlbinlog --skip-gtids   --start-position=753 --stop-position=1519  /data/binlog/mysql-bin.000002 >/backup/bin.sql
+
+
+4.6.3 恢复备份到临时库
+mysql -S /data/3307/mysql.sock
+set sql_log_bin=0;
+source /backup/full_2019-07-15.sql
+source /backup/bin.sql
+
+4.6.4 将故障表导出并恢复到生产
+mysqldump   -S /data/3307/mysql.sock -B  backup  >/backup/bak.sql
+mysql -uroot -p123 
+set sql_log_bin=0
+source /backup/bak.sql;
+
+5. 练习：
+1、创建一个数据库 oldboy
+2、在oldboy下创建一张表t1
+3、插入5行任意数据
+4、全备
+5、插入两行数据，任意修改3行数据，删除1行数据
+6、删除所有数据
+7、再t1中又插入5行新数据，修改3行数据
+
+需求，跳过第六步恢复表数据
+
+
+6. 扩展参数  ***
+在构建主从时,使用AUTO/ON
+--set-gtid-purged=AUTO/ON
+
+仅是做普通的本机备份恢复时,可以添加
+--set-gtid-purged=OFF  
+
+SET @@GLOBAL.GTID_PURGED='aa648280-a6a6-11e9-949f-000c294a1b3b:1-11';
+
+--max_allowed_packet=128M  控制的是备份时传输数据包的大小.
+
+mysqldump -uroot -p123 -A  -R  --max_allowed_packet=128M --triggers --set-gtid-purged=OFF --master-data=2  --single-transaction|gzip > /backup/full_$(date +%F).sql.gz
+
+
+7. 物理备份-XBK
+
+7.1 安装依赖包：
+wget -O /etc/yum.repos.d/epel.repo http://mirrors.aliyun.com/repo/epel-7.repo
+yum -y install perl perl-devel libaio libaio-devel perl-Time-HiRes perl-DBD-MySQL libev
+7.2 下载软件并安装
+wget https://www.percona.com/downloads/XtraBackup/Percona-XtraBackup-2.4.12/binary/redhat/7/x86_64/percona-xtrabackup-24-2.4.12-1.el7.x86_64.rpm
+
+https://www.percona.com/downloads/XtraBackup/Percona-XtraBackup-2.4.4/binary/redhat/6/x86_64/percona-xtrabackup-24-2.4.4-1.el6.x86_64.rpm
+
+yum -y install percona-xtrabackup-24-2.4.4-1.el7.x86_64.rpm
+
+7.3 innobackupex 使用 
+7.3.1 备份核心理念
+1. 针对非InnoDB,进行锁表备份,copy所有的非innoDB表文件
+2. 针对InnoDB表,立即触发CKPT,copy所有InnoDB表相关的文件(ibdata1,ibd,frm).
+并且将备份过程中产生,新的数据变化的部分redo一起备份走
+3. 在恢复时,xbk会调用InnoDB引擎的CSR过程,将数据和redo的LSN追平,然后进行一致性恢复.
+
+7.3.2 备份过程
+(1) 全备
+[root@db01 backup]# innobackupex  --user=root --password=123 --no-timestamp /backup/full
+(2) 利用全备进行恢复
+1. 
+[root@db01 ~]# pkill mysqld
+2. 
+[root@db01 ~]# \rm -rf /data/mysql/data/*
+3. *****
+[root@db01 ~]# innobackupex --apply-log /backup/full/
+4. 
+[root@db01 full]# cp -a /backup/full/* /data/mysql/data/
+5. 
+[root@db01 full]# chown -R mysql.mysql /data/mysql/data/*
+6. 
+[root@db01 full]# /etc/init.d/mysqld start
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

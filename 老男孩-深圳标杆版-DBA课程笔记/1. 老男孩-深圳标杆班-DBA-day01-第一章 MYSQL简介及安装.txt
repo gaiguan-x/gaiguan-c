@@ -1,0 +1,257 @@
+1. 说在前面的
+
+作息时间： 8：25
+每天晚上1:00之前睡觉
+
+困：
+1. 生理
+2. 心理
+
+每天每人
+上午：  提出一个自己学的最好的知识点 1个， 最不好的1个
+晚上：  提出一个自己学的最好的知识点 1个， 最不好的1个
+
+每天4个问题:
+2个学的好的
+2个学的弱的
+
+2. DBA职业规划
+2.1 需要学习的内容
+（1）MySQL 5.7 安装部署（二进制）*****
+	编译自己扩展
+（2）MySQL升级步骤扩展 ***
+（3）MySQL5.7 体系结构原理 *****
+（4）MySQL基础管理  *****
+（5）基础SQL语句使用 *****
+（6）SQL高级应用  ***
+（7）Information_schema获取元数据 ***
+（8）索引、执行计划管理（基础优化）*****
+（9）存储引擎  *****
+（10）日志管理 *****
+（11）备份与恢复 ******
+（12）主从复制及架构演变 ******
+（13）传统的高可用及读写分离（MHA&Atlas）****
+（14）传统分布式架构设计与实现-扩展（Mycat--->DBLE,DRDS）**
+（15）MySQL 5.7 高可用及分布式架构-扩展（MGR,InnoDB Cluster）***
+（16）MySQL优化（安全、性能） ****
+（17）MySQL 监控（zabbix、Open-falcon）    ****
+ (18) RDS(阿里云课程)    *****
+ 
+额外要会的(NoSQL)：
+	Redis
+	mongodb	
+	ES
+了解:	
+	PG
+	Oracle	
+RDBMS  : 关系型数据库 管理系统
+NoSQL  : 非关系型的 
+NewSQL : 新型的分布式解决方案
+
+RDBMS ---> NOSQL+RDBMS ---> NoSQL(RDBMS),RDBMS(NoSQL)----> NewSQL (spanner TiDB  PDB)
+
+
+3、DBA职业素养
+3.1、人品
+责任-----权利
+
+3.2 
+3.2.1 严谨
+磁带库----->备份软件-----17楼
+数据库修改\删除类的命令时 再三考虑，而且要有理论或者实践的支撑
+ 
+ 
+3.2.2 请收起你的好奇心！！！！！ 
+注意规范:
+脱库？ 华住网（ip root 密码），“脱敏”!!!!!。
+学会保护自己!!!
+
+3.3、细心
+把最简单的事情做的最漂亮，最专业。
+
+3.4、心态
+别惹事，出事别怕事
+
+-----------
+职业技能有关：
+3.5、熟悉操作系统（精通）
+3.6、熟悉公司业务
+业务？
+	产品的功能
+	用户的行为(热功能,热数据)		
+	
+3.7、熟悉行业
+熟悉行业发展趋势
+版本
+数据库产品类型
+https://db-engines.com/en/ranking
+定期参加数据库大会
+
+3.8、喜欢数据库
+体验很重要
+
+
+其实成功的门槛并不拥挤，因为大部分人在路上就放弃了。
+---oldguo
+
+
+4. 数据库产品 
+4.1 什么是数据？
+4.2 DBMS 数据库管理系统
+RDBMS  ： Oracle ，MySQL ，PG，MSSQL
+NoSQL  ： MongoDB ，Redis ，ES
+NEWSQL （分布式）： TiDB，Spanner ，AliSQL(RDS+DRDS) ，OB ，PolarDB
+
+4.3 MySQL 企业版本GA选择
+5.6 ： 5.6.34 5.6.36 5.6.38（2017913） 5.6.40 
+5.7 ： 5.7.18 ，20（2017913） ，24 ，（上课版本：5726）
+8.0 ： 8014， 8015 ，8016
+
+4.4 关于数据库版本面试
+你们公司用的什么版本的MySQL？  你在公司干几年了？
+
+4.5 MySQL 5.7.26 二进制版本安装
+4.5.1 下载并上传软件至/server/tools
+[root@db01 ~]# mkdir -p /server/tools
+[root@db01 ~]# cd /server/tools/
+[root@db01 /server/tools]# yum install -y lrzsz
+[root@db01 /server/tools]# ls
+mysql-5.7.26-linux-glibc2.12-x86_64.tar.gz
+
+4.5.2 解压软件
+[root@db01 /server/tools]# tar xf mysql-5.7.26-linux-glibc2.12-x86_64.tar.gz 
+[root@db01 ~]# mkdir /application
+[root@db01 /server/tools]# mv mysql-5.7.26-linux-glibc2.12-x86_64  /application/mysql
+
+
+4.5.3 用户的创建处理原始环境
+[root@db01 ~]# yum remove mariadb-libs-5.5.60-1.el7_5.x86_64 -y
+[root@db01 ~]# rpm -qa |grep mariadb
+[root@db01 ~]# useradd -s /sbin/nologin mysql
+
+4.5.4 设置环境变量
+vim /etc/profile
+export PATH=/application/mysql/bin:$PATH
+[root@db01 ~]# source /etc/profile
+[root@db01 ~]# mysql -V
+mysql  Ver 14.14 Distrib 5.7.26, for linux-glibc2.12 (x86_64) using  EditLine wrapper
+
+4.5.5 创建数据路径并授权
+1. 添加一块新磁盘模拟数据盘
+2. 格式化并挂载磁盘
+[root@db01 ~]# mkfs.xfs /dev/sdc
+[root@db01 ~]# mkdir /data
+[root@db01 ~]# blkid
+[root@db01 ~]# vim /etc/fstab 
+[root@db01 ~]# UUID="b7fde522-aa37-412a-9584-8313a673c5cc" /data xfs defaults 0 0
+[root@db01 ~]# mount -a
+[root@db01 ~]# df -h
+
+3. 授权 
+ chown -R mysql.mysql /application/*
+ chown -R mysql.mysql /data
+
+4.5.6 初始化数据（创建系统数据）
+
+# 5.6 版本 初始化命令  /application/mysql/scripts/mysql_install_db 
+# 5.7 版本
+[root@db01 ~]# mkdir /data/mysql/data -p 
+[root@db01 ~]# chown -R mysql.mysql /data
+[root@db01 ~]# mysqld --initialize --user=mysql --basedir=/application/mysql --datadir=/data/mysql/data 
+
+说明：
+--initialize 参数：
+1. 对于密码复杂度进行定制：12位，4种 
+2. 密码过期时间：180
+3. 给root@localhost用户设置临时密码
+
+报错:
+mysqld: error while loading shared libraries: libaio.so.1: cannot open shared object file: No such file or directory
+解决：
+[root@db01 ~]# yum install -y libaio-devel
+
+[root@db01 ~]# mysqld --initialize --user=mysql --basedir=/application/mysql --datadir=/data/mysql/data
+2019-06-13T04:21:27.706564Z 1 [Note] A temporary password is generated for root@localhost: =mrV)_16is4U
+
+--initialize-insecure 参数：
+无限制，无临时密码
+[root@db01 /data/mysql/data]# \rm -rf /data/mysql/data/*
+[root@db01 ~]# mysqld --initialize-insecure --user=mysql --basedir=/application/mysql --datadir=/data/mysql/data
+
+
+4.5.7 配置文件的准备
+cat >/etc/my.cnf <<EOF
+[mysqld]
+user=mysql
+basedir=/application/mysql
+datadir=/data/mysql/data
+socket=/tmp/mysql.sock
+server_id=6
+port=3306
+[mysql]
+socket=/tmp/mysql.sock
+EOF
+
+4.5.8 启动数据库
+1. sys-v 
+
+[root@db01 /etc/init.d]# cp /application/mysql/support-files/mysql.server  /etc/init.d/mysqld 
+[root@db01 /etc/init.d]# service mysqld restart
+
+
+2. systemd 
+注意： sysv方式启动过的话，需要先提前关闭，才能以下方式登录
+cat >/etc/systemd/system/mysqld.service <<EOF
+[Unit]
+Description=MySQL Server
+Documentation=man:mysqld(8)
+Documentation=http://dev.mysql.com/doc/refman/en/using-systemd.html
+After=network.target
+After=syslog.target
+[Install]
+WantedBy=multi-user.target
+[Service]
+User=mysql
+Group=mysql
+ExecStart=/application/mysql/bin/mysqld --defaults-file=/etc/my.cnf
+LimitNOFILE = 5000
+EOF
+
+
+
+5. 如何分析处理MySQL数据库无法启动
+5.1 without updating PID 类似错误 
+查看日志：
+	在哪？
+	/data/mysql/data/主机名.err 
+	[ERROR] 上下文
+可能情况：
+	/etc/my.cnf 路径不对等
+	/tmp/mysql.sock文件修改过 或 删除过 
+	数据目录权限不是mysql
+	参数改错了
+
+6.管理员密码的设定（root@localhost）
+[root@db01 ~]# mysqladmin -uroot -p password oldboy123
+Enter password: 
+
+
+7. 管理员用户密码忘记了？
+--skip-grant-tables  #跳过授权表
+--skip-networking    #跳过远程登录
+
+7.1 关闭数据库
+[root@db01 ~]# /etc/init.d/mysqld stop
+Shutting down MySQL.. SUCCESS! 
+
+7.2 启动数据库到维护模式
+[root@db01 ~]# mysqld_safe --skip-grant-tables --skip-networking &
+
+7.3 登录并修改密码
+mysql> alter user root@'localhost' identified by '1';
+ERROR 1290 (HY000): The MySQL server is running with the --skip-grant-tables option so it cannot execute this statement
+mysql> flush privileges;
+mysql> alter user root@'localhost' identified by '1';
+Query OK, 0 rows affected (0.01 sec)
+
+7.4 关闭数据库，正常启动验证

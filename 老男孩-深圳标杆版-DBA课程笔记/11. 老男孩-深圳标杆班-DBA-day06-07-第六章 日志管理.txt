@@ -1,0 +1,357 @@
+一. 上节回顾
+
+1. 表空间 
+1.1 说明
+独立表空间 : 5.6 开始的默认表空间,一个表一个ibd文件,存储数据行和索引.  *****
+共享表空间 : 5.5 默认的模式, 所有表的行和索引都存储到ibdata1
+说明: 从5.6 开始,不再使用共享表空间模式
+5.6版本  数据字典信息 + UNDO + tmp
+5.7版本  把tmp独立了
+8.0版本  把UNDO独立
+1.2 表空间迁移   *****
+(1)创建和原表结构相同的表
+(2)新建表的ibd删除
+alter table  t1 discard tablespace ;
+(3)拷贝原表ibd到新位置
+(4)导入ibd到新表
+alter table t1 import tablespace;
+1.3 ibtmp1 保存临时表 
+1.4 undo 重做的日志存储位置
+
+
+2. ACID
+
+3. redo   *****
+(1) 记录 内存数据页变化日志
+(2) 提供 快速的事务的提交(commit)
+(3) CSR  redo提供的前滚的功能
+
+4. undo  *****
+(1) 记录 数据修改之前的状态
+(2) 提供 事务工作过过程中回滚操作(rollback)
+(3) CSR 中将未提交的事务进行回滚
+
+
+5. 隔离级别 *****
+RU 		: 读未提交,会有脏读 , 幻读 ,不可重复读
+RC *****: 读已提交,会有 幻读,不可重复读. 在大部分互联网企业中是可以容忍的.
+RR *****: 可重复读:(MVCC ,undo快照)防止不可重复读, 有可能出现幻读,可以用通过GAP+Next LOCK来防止幻读(索引).
+SR 		: 可串行化: 
+
+6. 不可重复读(现象) *****
+7. 幻读(现象)*****
+
+8.  InnoDB核心参数的介绍
+
+#存储引擎默认设置
+default_storage_engine=innodb
+
+#表空间模式
+innodb_file_per_table=1
+# 共享表空间文件个数和大小
+innodb_data_file_path=ibdata1:512M:ibdata2:512M:autoextend
+# "双一" 标准的其中一个 ******
+innodb_flush_log_at_trx_commit=1 
+-------
+The default setting of 1 is required for full ACID compliance. Logs are written and flushed to disk at each transaction commit.
+With a setting of 0, logs are written and flushed to disk once per second. Transactions for which logs have not been flushed can be lost in a crash.
+With a setting of 2, logs are written after each transaction commit and flushed to disk once per second. Transactions for which logs have not been flushed can be lost in a crash.
+-------
+
+Innodb_flush_method=(O_DIRECT, fsync) *****
+
+作用: 控制的是 Redo buffer  和 buffer pool
+fsync    : 
+O_DIRECT : 建议模式
+O_DSYNC  :
+
+最高安全模式
+innodb_flush_log_at_trx_commit=1
+Innodb_flush_method=O_DIRECT
+
+最高性能:
+innodb_flush_log_at_trx_commit=0
+Innodb_flush_method=fsync
+
+
+redo日志设置有关的
+innodb_log_buffer_size=16777216
+innodb_log_file_size=50331648
+innodb_log_files_in_group = 3
+
+脏页刷写策略
+innodb_max_dirty_pages_pct=75
+还有哪些机制会触发写磁盘?
+CSR 
+redo满了
+
+
+二. 日志管理
+
+1. 错误日志 ***
+1.1 作用 
+排查MySQL运行过程的故障.
+1.2 默认配置 
+默认就开启了.
+默认路径和名字: datadir/hostname.err
+查看方法: [ERROR]
+1.3 人为定制位置
+log_error=/tmp/mysql3306.log
+重启生效.
+select @@log_error;
+
+2. 二进制日志(binlog)******
+2.1 作用
+(1) 主从要依赖二进制日志
+(2) 数据恢复时需要依赖于二进制日志
+
+2.2 如何配置?
+(1)参数介绍
+默认没有开启.
+server_id=6
+log_bin=/data/binlog/mysql-bin
+说明: 
+/data/binlog : 提前定制好的目录,而且要有mysql.mysql的权限
+mysql-bin 	 : 二进制日志文件名的前缀
+例如: mysql-bin.000001  ,mysql-bin.000002 ......
+binlog_format=row ---> 5.7版本默认配置是row,可以省略.
+(2) 参数配置 
+server_id=6
+log_bin=/data/binlog/mysql-bi
+binlog_format=row
+
+(3)创建目录和授权
+mkdir -p /data/binlog/
+chown -R mysql.mysql /data
+(4)重启生效
+[root@db01 tmp]# /etc/init.d/mysqld restart
+Shutting down MySQL.. SUCCESS! 
+Starting MySQL. SUCCESS! 
+
+2.3 二进制日志记录了什么?
+2.3.1 概括
+记录的数据库所有变更类的操作日志.
+DDL
+DCL
+DML
+
+2.3.2 DDL 和 DCL 
+以语句的方式,原模原样的记录.
+
+2.3.3 DML 
+(1) 他记录的已提交的事务
+(2) DML记录格式(statement,row,mixed),通过binlog_format=row参数控制
+说明:
+	statement:SBR,语句模式记录日志,做什么命令,记录什么命令.
+	row		 :RBR,行模式,数据行的变化
+	mixed	 :MBR,混合模式
+
+面试问题: SBR和RBR什么区别?怎么选择?
+SBR:  可读性较强,对于范围操作日志量少,但是可能会出现记录不准确的情况.
+RBR:  可读性较弱,对于范围操作日志大,不会出现记录错误.
+	  高可用环境中的新特性要依赖于RBR
+我们公司对数据的严谨性要求较高,也用用到了新型的架构,所以选择RBR
+
+
+2.4 二进制日志记录单元
+2.4.1 event 事件
+二进制日志的最小单元
+DDL :  
+create database oldguo;  事件1
+
+对于DDL等语句是每一个语句就是一个事件
+DML: 一个事务包含了多个语句
+begin;    	 事件1
+a 			 事件2
+b			 事件3
+commit;      事件4 
+
+2.4.2 event事件的开始和结束号码
+作用,方便我们从日志中截取我们想要的日志事件.
+
+
+2.5 二进制日志的管理
+2.5.1 查看二进制日志位置
+mysql> show variables like '%log_bin%';
+
+2.5.2 查看所有已存在的二进制日志
+mysql> show binary logs;
+mysql> flush logs;
+mysql> show binary logs;
+
+2.5.3 查看正在使用的二进制日志
+mysql> show master status ;
+
+2.5.4 查看二进制日志事件 
+mysql> create database binlog charset utf8mb4;
+mysql> use binlog
+mysql> create table t1(id int);
+mysql> insert into t1 values(1);
+
+
+mysql> show master status ;
++------------------+----------+--------------+------------------+-------------------+
+| File             | Position | Binlog_Do_DB | Binlog_Ignore_DB | Executed_Gtid_Set |
++------------------+----------+--------------+------------------+-------------------+
+| mysql-bin.000004 |      501 |              |                  |                   |
++------------------+----------+--------------+------------------+-------------------+
+1 row in set (0.00 sec)
+
+mysql> show binlog events in 'mysql-bin.000004';
+mysql> show binlog events in 'mysql-bin.000004' limit 5;
+
+
+
+2.5.5 查看二进制日志内容
+[root@db01 binlog]# mysqlbinlog mysql-bin.000004
+[root@db01 binlog]# mysqlbinlog --base64-output=decode-rows -vvv mysql-bin.000004 
+[root@db01 binlog]# mysqlbinlog -d haoge mysql-bin.000004 
+
+
+
+2.5.6 截取二进制日志
+[root@db01 binlog]# mysqlbinlog --start-position=219 --stop-position=335 mysql-bin.000004 >/tmp/a.sql
+
+2.5.7 通过binlog恢复数据
+(1) 模拟数据
+mysql> create database haoge charset utf8mb4;
+mysql> use haoge;
+mysql> create table t1(id int);
+mysql> insert into t1 values(1);
+mysql> commit;
+
+(2)模拟故障 
+mysql> drop database haoge;
+
+(3)分析和截取binlog
+mysql> show master status ;    						--->确认使用的是哪一个日志
+mysql> show binlog events in 'mysql-bin.000004' ;   --->查看事件
+说明: 找到起点和终点,进行截取
+ mysqlbinlog --start-position=823 --stop-position=1420 /data/binlog/mysql-bin.000004 >/tmp/bin.sql
+
+(4)恢复binlog
+
+mysql> set sql_log_bin=0;    --->临时关闭恢复时产生的新日志
+mysql> source /tmp/bin.sql
+mysql> set sql_log_bin=1; set sql_log_bin=1;    --->改回来
+
+
+2.6 binlog的gtid记录模式的管理 ****
+2.6.1 GTID介绍
+对于binlog中的每一个事务,都会生成一个GTID号码
+DDL ,DCL 一个event就是一个事务,就会有一个GTID号.
+DML语句来讲,begin到commit,是一个事务,就是一个GTID号
+2.6.2 GTID的组成
+severi_uuid:TID
+severi_uuid? 
+[root@db01 data]# cat auto.cnf 
+[auto]
+server-uuid=d60b549f-9e10-11e9-ab04-000c294a1b3b
+
+TID是一个:自增长的数据,从1开始
+d60b549f-9e10-11e9-ab04-000c294a1b3b:1-15
+
+2.6.3 GTID的幂等性
+如果拿有GTID的日志去恢复时,检查当前系统中是否有相同GTID号,有相同的就自动跳过
+会影响到binlog恢复和主从复制.
+
+2.6.4 GTID的开启和配置
+vim /etc/my.cnf
+gtid-mode=on
+enforce-gtid-consistency=true
+
+2.6.5 查看GTID信息
+mysql> create database gtid charset utf8mb4;
+mysql> show master status;
+mysql> use gtid;
+mysql> create table t1(id int);
+mysql> show master status;
+mysql> insert into t1 values(1);
+mysql> commit;
+mysql> show master status;
+mysql> drop database gtid;
+
+
+2.6.6 基于GTID,binlog恢复
+(1) 截取日志
+[root@db01 data]# cd /data/binlog/
+[root@db01 binlog]# mysqlbinlog --include-gtids='d60b549f-9e10-11e9-ab04-000c294a1b3b:1-3' mysql-bin.000005 >/tmp/gtid.sql
+
+(2)恢复 
+mysql> set sql_log_bin=0;
+mysql> source /tmp/gtid.sql
+mysql> set sql_log_bin=1;
+(3) 报错
+ERROR 1049 (42000): Unknown database 'gtid'
+Query OK, 0 rows affected (0.00 sec)
+ERROR 1046 (3D000): No database selected
+为什么报错?
+因为幂等性的检查,1-3事务已经做过了.
+
+
+(4)正确的做法?
+mysqlbinlog --skip-gtids --include-gtids='d60b549f-9e10-11e9-ab04-000c294a1b3b:1-3' mysql-bin.000005 >/tmp/gtid.sql
+--skip-gtids 作用:在导出时,忽略原有的gtid信息,恢复时生成最新的gtid信息
+
+(5) 恢复
+
+set sql_log_bin=0;
+source /tmp/gtid.sql
+set sql_log_bin=1;
+
+2.6.7 GTID相关的参数
+--skip-gtids 
+--include-gtids='d60b549f-9e10-11e9-ab04-000c294a1b3b:6','d60b549f-9e10-11e9-ab04-000c294a1b3b:8'
+--exclude-gtids='d60b549f-9e10-11e9-ab04-000c294a1b3b:6','d60b549f-9e10-11e9-ab04-000c294a1b3b:8'
+
+
+
+3.慢日志(slow-log)
+3.1 作用
+记录运行较慢的语句,优化过程中常用的工具日志.
+3.2 如何配置
+## 开关
+slow_query_log=1 
+## 文件位置及名字 
+slow_query_log_file=/data/mysql/slow.log
+## 设定慢查询时间
+long_query_time=0.1
+## 没走索引的语句也记录
+log_queries_not_using_indexes
+
+vim /etc/my.cnf
+slow_query_log=1 
+slow_query_log_file=/data/mysql/slow.log
+long_query_time=0.1
+log_queries_not_using_indexes
+
+3.3 模拟慢查询
+略.
+
+3.4 分析慢日志
+mysqldumpslow -s c -t 10 /data/mysql/slow.log
+
+# 3.5  第三方工具(自己扩展)
+https://www.percona.com/downloads/percona-toolkit/LATEST/
+yum install perl-DBI perl-DBD-MySQL perl-Time-HiRes perl-IO-Socket-SSL perl-Digest-MD5
+toolkit工具包中的命令:
+pt-query-diagest  /data/mysql/slow.log
+
+Anemometer基于pt-query-digest将MySQL慢查询可视化
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

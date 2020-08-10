@@ -1,0 +1,161 @@
+上节回顾
+1. 半同步
+2. 延时从
+3. gtid 
+4. MHA Failover
+
+5. binlog server
+
+6. MHA配置参数
+cat > /etc/mha/app1.cnf <<EOF
+[server default]
+manager_log=/var/log/mha/app1/manager        
+manager_workdir=/var/log/mha/app1            
+master_binlog_dir=/data/binlog       
+user=mha                                   
+password=mha                               
+ping_interval=2
+repl_password=123
+repl_user=repl
+ssh_user=root                               
+[server1]                                   
+hostname=10.0.0.51
+port=3306                                  
+[server2]            
+hostname=10.0.0.52
+port=3306	
+candidate_master=1
+check_repl_delay=0
+[server3]
+hostname=10.0.0.53
+port=3306
+EOF
+[binlog1]
+no_master=1
+hostname=10.0.0.53
+master_binlog_dir=/data/mysql/binlog
+
+7. MHA的故障排查
+7.1 搭建过程中排查
+(1) 检查脚本
+	masterha_check_ssh --conf=/etc/mha/app1.cnf 
+	masterha_check_repl --conf=/etc/mha/app1.cnf 
+	1主2从复制环境 
+(2) 配置文件 
+	节点地址,端口
+	vip 和send脚本指定位置和权限
+(3) 软连接  
+
+7.2 切换过程的问题
+查看/var/log/mha/app1/manager 
+脚本问题比较多一些
+vip
+send 
+binlog
+
+7.3 恢复MHA 故障
+(1) 检查各个节点是否启动
+(2) 找到主库是谁? 
+(3) 恢复1主2从
+CHANGE MASTER TO MASTER_HOST='10.0.0.51', MASTER_PORT=3306, MASTER_AUTO_POSITION=1, MASTER_USER='repl', MASTER_PASSWORD='123';
+(4) 检查配置文件,恢复节点信息
+[server1]
+hostname=10.0.0.51
+port=3306
+[server2]
+hostname=10.0.0.52
+port=3306
+[server3]
+hostname=10.0.0.53
+port=3306
+
+(5) 检查vip和binlogserver 
+1. 检查vip是否在主库,如果不在,手工调整到主库
+2. 重新启动binlogserver 拉取
+[root@db03 binlog]# mysqlbinlog  -R --host=10.0.0.51 --user=mha --password=mha --raw  --stop-never mysql-bin.000001 &
+
+(6) 启动Mananer 
+[root@db03 bin]# nohup masterha_manager --conf=/etc/mha/app1.cnf --remove_dead_master_conf --ignore_last_failover  < /dev/null> /var/log/mha/app1/manager.log 2>&1 &
+masterha_check_status --conf=/etc/mha/app1.cnf
+====================================================================================
+MHA配合Atlas实现读写分离
+
+1. Atlas 介绍
+Atlas是由 Qihoo 360, Web平台部基础架构团队开发维护的一个基于MySQL协议的数据中间层项目。
+它是在mysql-proxy 0.8.2版本的基础上，对其进行了优化，增加了一些新的功能特性。
+360内部使用Atlas运行的mysql业务，每天承载的读写请求数达几十亿条。
+下载地址
+https://github.com/Qihoo360/Atlas/releases
+
+注意：
+1、Atlas只能安装运行在64位的系统上
+2、Centos 5.X安装 Atlas-XX.el5.x86_64.rpm，Centos 6.X安装Atlas-XX.el6.x86_64.rpm。
+3、后端mysql版本应大于5.1，建议使用Mysql 5.6以上
+
+2.安装配置
+yum install -y Atlas*
+
+cd /usr/local/mysql-proxy/conf
+mv test.cnf test.cnf.bak
+
+vi test.cnf
+[mysql-proxy]
+admin-username = user
+admin-password = pwd
+proxy-backend-addresses = 10.0.0.55:3306
+proxy-read-only-backend-addresses = 10.0.0.51:3306,10.0.0.53:3306
+pwds = repl:3yb5jEku5h4=,mha:O2jBXONX098=
+daemon = true
+keepalive = true
+event-threads = 8
+log-level = message
+log-path = /usr/local/mysql-proxy/log
+sql-log=ON
+proxy-address = 0.0.0.0:33060
+admin-address = 0.0.0.0:2345
+charset=utf8
+
+启动atlas
+/usr/local/mysql-proxy/bin/mysql-proxyd test start
+ps -ef |grep proxy
+
+
+3. Atlas功能测试
+测试读操作：
+mysql -umha -pmha  -h 10.0.0.53 -P 33060 
+db03 [(none)]>select @@server_id;
+测试写操作：
+mysql> begin;select @@server_id;commit;
+
+
+4. 生产用户要求
+开发人员申请一个应用用户 app(  select  update  insert)  密码123456,要通过10网段登录
+4.1  在主库中,创建用户
+grant select ,update,insert on *.* to app@'10.0.0.%' identified by '123456';
+
+
+4.2. 在atlas中添加生产用户
+
+/usr/local/mysql-proxy/bin/encrypt  123456      ---->制作加密密码
+
+vim /usr/local/mysql-proxy/conf/test.cnf
+pwds = repl:3yb5jEku5h4=,mha:O2jBXONX098=,app:/iZxz+0GRoA=
+
+/usr/local/mysql-proxy/bin/mysql-proxyd test restart
+[root@db03 conf]# mysql -uapp -p123456  -h 10.0.0.53 -P 33060
+
+
+5. Atlas基本管理
+连接管理接口
+mysql -uuser -ppwd -h127.0.0.1 -P2345
+select * from help;
+SELECT * FROM backends;
+set offline 2;
+set online 2;
+REMOVE BACKEND 3;
+ADD SLAVE 10.0.0.53:3306;
+ADD PWD oldguo:123456;
+save config;
+
+
+

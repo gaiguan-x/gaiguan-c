@@ -1,0 +1,698 @@
+# 1. Docker介绍
+## 1.1 什么是容器?
+## 1.2 容器的前世
+FreeBASE jail ------> Linux vserver
+chroot   -----> 完整的根文件系统(FHS)标准的
+namespaces ---> UTS Mount IPC PID user network
+cgroup	   ---> 资源的分配和监控
+
+通过比较复杂的代码开发的过程,调用以上三项技术
+实现容器的创建   ----> 管理  ---->销毁
+
+## 1.3 传统虚拟化技术和容器对比
+## 1.4 容器的今生?
+实现隔离能力!
+LXC  (LinuXContainer)  
+对于原有的常用功能进行了封装,方便我们做容器的生命周期
+-----> Docker (dotcloud)
+
+
+# 2. Docker的安装
+## 2.0、yum源准备
+```
+curl  http://mirrors.aliyun.com/docker-ce/linux/centos/docker-ce.repo -o /etc/yum.repos.d/docker-ce.repo
+wget -O /etc/yum.repos.d/epel.repo http://mirrors.aliyun.com/repo/epel-7.repo
+curl -o /etc/yum.repos.d/CentOS-Base.repo http://mirrors.aliyun.com/repo/Centos-7.repo
+```
+
+
+## 2.1 安装依赖包
+
+```
+yum install -y yum-utils device-mapper-persistent-data lvm2
+yum list docker-ce.x86_64 --showduplicates | sort -r
+```
+yum install -y docker-ce
+
+## 2.2 安装docker-ce
+
+```
+yum install -y --setopt=obsoletes=0 \
+docker-ce-17.03.2.ce-1.el7.centos.x86_64 \
+docker-ce-selinux-17.03.2.ce-1.el7.centos.noarch
+```
+
+## 2.3 启动Docker服务
+```
+systemctl daemon-reload
+systemctl restart docker
+docker version
+docker  info
+```
+
+## 2.4 配置镜像加速
+
+```
+阿里云Docker-hub
+https://cr.console.aliyun.com/cn-hangzhou/mirrors
+
+mkdir -p /etc/docker
+tee /etc/docker/daemon.json <<-'EOF'
+{
+  "registry-mirrors": ["https://uoggbpok.mirror.aliyuncs.com"]
+}
+EOF
+
+systemctl daemon-reload
+systemctl restart docker
+	  	  
+或者:
+vim   /etc/docker/daemon.json
+
+	{
+		 "registry-mirrors": ["https://68rmyzg7.mirror.aliyuncs.com"]
+	}	
+```
+#3. Doocker体系结构
+
+![image.png](https://upload-images.jianshu.io/upload_images/16956686-c14bcc1289b84523.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
+
+
+
+# 4. Docker的镜像基础管理
+## 4.1  获取镜像
+
+```
+基础镜像拉取
+docker search centos
+docker pull centos:6.9
+docker pull centos:7.5.1804
+docker pull nginx
+```
+## 4.2 镜像基本查看
+```
+[root@docker ~]# docker image ls
+REPOSITORY          TAG                 IMAGE ID            CREATED             SIZE
+centos              6.8                 82f3b5f3c58f        4 months ago        195 MB
+centos              6.9                 2199b8eb8390        4 months ago        195 MB
+centos              7.5.1804            cf49811e3cdb        4 months ago        200 MB
+centos              7.6.1810            f1cb7c7d58b7        4 months ago        202 MB
+oldguo/centos_sshd  v1.0
+oldguo/centos_sshd  v2.0
+oldguo/centos_sshd  v3.0
+标识镜像唯一性的方法:
+1. REPOSITORY:TAG
+centos:7.5.1804 
+2. IMAGE ID (sha256:64位的号码,默认只截取12位)
+82f3b5f3c58    
+[root@docker /]# docker image ls --no-trunc 
+```
+## 4.3 镜像详细信息查看
+```
+[root@docker /]# docker image inspect ubuntu:latest
+[root@docker /]# docker image inspect 82f3b5f3c58f
+```
+## 4.4 只查看镜像ID 
+```
+[root@docker ~]# docker image ls -q
+```
+## 4.5 镜像的导入和导出
+```
+[root@docker ~]# docker image save 3556258649b2 >/tmp/ubu.tar
+[root@docker ~]# docker image rm 3556258649b2
+[root@docker ~]# docker image load -i /tmp/ubu.tar
+[root@docker ~]# docker image tag 3556258649b2 oldguo/ubu:v1 
+```
+## 4.6 镜像的删除 
+```
+[root@docker ~]# docker image rm -f 3556258649b2
+[root@docker ~]# docker image rm -f `docker image ls -q`
+```
+# 5. 容器的管理
+## 5.1 运行第一个容器
+### 5.1.1 交互式的容器:
+```
+[root@docker ~]# docker container run -it  9f38484d220f
+[root@docker /]# docker container ls
+[root@docker /]# docker container ls
+CONTAINER ID        IMAGE               COMMAND             CREATED             STATUS              PORTS               NAMES
+4d1ef5a6ecfc        9f38484d220f        "/bin/bash"         5 minutes ago       Up 5 minutes                            nervous_alle
+
+CONTAINER ID : 容器的唯一号码(自动生成的)
+NAMES		 : 容器的名字(可以自动,也可以手工指定)
+例子: 手工指定容器名启动
+[root@docker /]# docker container run -it --name="oldguo_cent76" 9f38484d220f
+[root@docker /]# docker container ls -a
+CONTAINER ID        IMAGE               COMMAND             CREATED              STATUS                     PORTS               NAMES
+ef45b19d8c7b        9f38484d220f        "/bin/bash"         About a minute ago   Exited (0) 5 seconds ago                       oldguo_cent76
+4d1ef5a6ecfc        9f38484d220f        "/bin/bash"         9 minutes ago        Up 9 minutes                                   nervous_allen
+
+STATUS	     : 容器的运行状态  ( Exited , Up)
+```
+### 5.1.2 守护式容器
+```
+[root@docker /]# docker run -d --name="oldguo_nginx" nginx:1.14
+查询容器的详细信息:
+[root@docker /]# docker container inspect oldguo_nginx
+```
+### 5.1.3 容器的应用场景
+```
+交互式的容器: 工具类: 开发,测试,临时性的任务()
+[root@docker ~]# docker container run -it --name="oldguo_cent76"  --rm 9f38484d220f
+守护式容器: 网络服务
+[root@docker /]# docker run -d -p 8080:80 --name="oldguo_nginx_80" nginx:1.14
+```
+
+### 5.1.4 容器的启动\关闭\连接
+```
+守护式容器的关闭和启动
+[root@docker /]# docker container stop oldguo_nginx_80
+[root@docker /]# docker container start oldguo_nginx_80
+
+交互式的容器的关闭和启动
+[root@docker /]# docker container stop nervous_allen
+[root@docker /]# docker container start -i  nervous_allen
+
+容器的连接方法:
+[root@docker /]# docker container attach nervous_allen
+
+子进程的方式登录(在已有工作容器中生成子进程,做登录.可以用于进行容器的调试,退出时也不会影响到当前容器)
+[root@docker ~]# docker container exec -it nervous_allen /bin/bash
+
+容器的后台及前台运行:
+1. ctrl + P, Q   
+attach 调用到前台
+2. 死循环 
+3. 让程序前台一直允许(夯在前台)
+制作守护式容器时,常用的方法
+
+```
+## 5.2 docker容器的网络访问
+```
+指定映射(docker 会自动添加一条iptables规则来实现端口映射)
+    -p hostPort:containerPort
+    -p ip:hostPort:containerPort 
+    -p ip::containerPort(随机端口:32768-60999)
+    -p hostPort:containerPort/udp
+    -p 81:80 –p 443:443
+随机映射
+    docker run -P 80（随机端口）	
+[root@docker ~]# docker container run -d -p 8080:80 --name='n2' nginx:1.14    *****
+[root@docker ~]# docker container run -d -p 10.0.0.100:8081:80 --name='n3' nginx:1.14  *****
+[root@docker ~]# docker container run -d -p 80 --name='n5' nginx:1.14
+[root@docker ~]# docker container run -d -p 172.16.1.200::80 --name='n6' nginx:1.14
+
+```
+## 5.3容器的其他管理
+```
+docker ps -a  -q 
+等价于:
+docker container ls -a -q
+[root@docker ~]# docker  top  ba9143bcaf74
+等价于:
+[root@docker ~]# docker  container top  ba9143bcaf74
+查看日志:
+[root@oldboy docker]# docker logs testxx
+[root@oldboy docker]# docker logs -tf testxx
+
+[root@oldboy docker]# docker logs -t testxx
+[root@oldboy docker]# docker logs -tf  --tail 10 testxx
+[root@oldboy docker]# docker logs -tf  --tail 0 testxx
+
+```
+
+小结:
+1. 镜像类:
+	docker image 
+				search 
+				pull 
+				ls        *****
+				inspect   *****
+				rm        ****
+				save 
+				load 
+2. 容器类
+    docker container 
+				run 		*****
+				start       ****
+				stop 		****
+				restart     
+				kill 
+				attach 
+				exec 	    *****
+				ls          *****
+				top         ****
+				logs 
+				inspect     ****
+				
+
+## 5.4 docker的数据卷实现持久化存储
+```
+1. 手工交互数据:
+[root@docker opt]# docker container cp index.html n1:/usr/share/nginx/html/
+[root@docker opt]# docker container cp n1:/usr/share/nginx/html/50x.html ./
+
+2. Volume实现宿主机和容器的数据共享
+[root@docker opt]# mkdir -p /opt/html
+[root@docker ~]# docker run -d --name="nginx_3" -p 83:80 -v /opt/html:/usr/share/nginx/html nginx
+
+作用: 数据持久化
+3. 例子:  开启两个nginx容器(90,91),共同挂载一个数据卷,实现静态资源共享
+
+4. 数据卷容器:
+(1)宿主机模拟数据目录
+mkdir -p /opt/Volume/a
+mkdir -p /opt/Volume/b
+touch /opt/Volume/a/a.txt
+touch /opt/Volume/b/b.txt
+
+(2)启动数据卷容器
+docker run -it  --name "nginx_volumes" -v /opt/Volume/a:/opt/a  -v /opt/Volume/b:/opt/b centos:6.9 /bin/bash
+ctrl p q
+
+(3)使用数据卷容器
+docker run -d  -p 8085:80 --volumes-from  nginx_volumes --name "n8085"  nginx
+docker run -d  -p 8086:80 --volumes-from  nginx_volumes --name "n8086"  nginx
+作用:  在集中管理集群中,大批量的容器都需要挂载相同的多个数据卷时,可以采用数卷容器进行统一管理
+
+```
+# 6.制作本地局域网yum源
+```
+1. 安装vsftpd软件
+[root@docker ~]# yum install -y vsftpd
+2. 启动ftp 
+[root@docker ~]# systemctl enable vsftpd
+[root@docker ~]# systemctl start vsftpd
+3. 上传系统进行到虚拟机
+略.
+
+4. 配置yum仓库
+mkdir -p /var/ftp/centos6.9 
+mkdir -p /var/ftp/centos7.5
+[root@docker mnt]# mount -o loop /mnt/CentOS-6.9-x86_64-bin-DVD1.iso  /var/ftp/centos6.9/
+
+windows验证
+ftp://10.0.0.100/centos6.9/
+
+
+cat >/etc/yum.repos.d/ftp_6.repo <<EOF 
+[ftp]
+name=ftpbase
+baseurl=ftp://172.17.0.1/centos6.9
+enabled=1
+gpgcheck=0
+EOF
+
+
+cat >/etc/yum.repos.d/ftp_7.repo <<EOF 
+[ftp]
+name=ftpbase
+baseurl=ftp://10.0.0.100/centos7.5
+enabled=1
+gpgcheck=0
+EOF
+```
+
+
+#7.基于容器的镜像制作
+## 7.1 基于容器的镜像制作-Aliyun ECS（Centos6.9_sshd 单服务）
+
+### 7.1.1  启动基础镜像容器 
+ docker run -it --name="oldguo_centos" centos:6.9
+### 7.1.2  安装所需要的软件包 ，并且启动测试
+mv /etc/yum.repos.d/*.repo /tmp
+echo -e "[ftp]\nname=ftp\nbaseurl=ftp://172.17.0.1/centos6.9\ngpgcheck=0">/etc/yum.repos.d/ftp.repo
+yum makecache fast && yum install openssh-server -y
+/etc/init.d/sshd start     ----->重要:ssh第一次启动时,需要生成秘钥,生成pam验证配置文件
+/etc/init.d/sshd stop
+echo "123456" | passwd --stdin 
+
+### 7.1.3 镜像的制作
+docker  commit oldguo_centos oldguo/centos6.9_sshd:v1
+### 7.1.4 基于新镜像启动容器实现，centos6.9+sshd的功能
+[root@docker ~]# docker container run -d  --name=sshd_2222    -p 2222:22  7c0d7daff04a
+
+## 7.2 构建企业网站定制镜像 （Centos6.9_SSHD_LAMP_BBS）
+
+### 7.2.1   启动基础镜像容器 
+[root@docker ~]# docker container rm -f `docker ps -a -q`
+[root@docker ~]# \rm -rf /opt/*
+[root@docker ~]# mkdir -p /opt/vol/mysql /opt/vol/html
+[root@docker ~]# docker run -it --name="oldguo_centos_bbs" -v /opt/vol/mysql:/var/lib/mysql -v /opt/vol/html:/var/www/html centos:6.9
+
+### 7.2.2 优化yum源并安装软件
+mv /etc/yum.repos.d/*.repo /tmp
+echo -e "[ftp]\nname=ftp\nbaseurl=ftp://172.17.0.1/centos6.9\ngpgcheck=0">/etc/yum.repos.d/ftp.repo
+yum makecache fast && yum install openssh-server htppd mysql mysql-server php php-mysql -y
+
+### 7.2.3 软件初始化
+
+### sshd 初始化
+/etc/init.d/sshd start
+/etc/init.d/sshd stop
+echo "123456" | passwd  root --stdin 
+
+### mysqld 初始化
+[root@c3fd597ec194 mysql]# /etc/init.d/mysqld start
+mysql> grant all on *.* to root@'%' identified by '123';
+mysql> grant all on *.* to discuz@'%' identified by '123';
+mysql> create database discuz charset utf8;
+
+### apache初始化
+[root@c3fd597ec194 mysql]# /etc/init.d/httpd start
+
+### 7.2.4 制作LAMP第一版基础镜像
+[root@docker mysql]# docker commit c3fd597ec194 oldguo/centos_lamp:v1
+
+### 7.2.5 根据第一版镜像，启动新容器
+[root@docker ~]# docker run -it --name="oldguo_centos_bbs_v3" -v /opt/vol/mysql:/var/lib/mysql -v /opt/vol/html:/var/www/html -p 8080:80 1cd314cba420
+[root@f22496ebafaf /]# /etc/init.d/mysqld start                                      
+[root@f22496ebafaf /]# /etc/init.d/httpd start
+
+
+### 7.2.6 测试php功能
+vim  /var/www/html/index.php 
+<?php
+phpinfo();
+?>
+
+### 7.2.7 安装bbs论坛
+上传bbs代码到宿主机/opt/vol/html并解压
+安装。
+
+### 7.2.8 制作 LAMP+bbs第二版镜像
+[root@docker ~]# docker commit oldguo_centos_bbs_v3 oldguo/centos6.9_sshd_lamp_bbs:v1
+
+### 7.2.9 创建启动脚本
+[root@docker html]# cd /opt/vol/html
+[root@docker html]# cat init.sh 
+#!/bin/bash
+/etc/init.d/mysqld start 
+/etc/init.d/httpd start
+/usr/sbin/sshd -D
+[root@docker html]# chmod 777 init.sh 
+
+### 7.2.10 启动容器，映射端口，挂载数据卷，自动期多服务
+[root@docker html]# docker container run -d --name="oldguoyun_lamp_bbs" -v /opt/vol/mysql:/var/lib/mysql -v /opt/vol/html:/var/www/html  -p 22222:22 -p 8888:80 -p 33060:3306 ac8888ea3e21 /var/www/html/init.sh
+
+
+# 7.3 centos:7.5.1804_sshd  
+
+mv /etc/yum.repos.d/*.repo /tmp
+echo -e "[ftp]\nname=ftp\nbaseurl=ftp://172.17.0.1/centos7.5\ngpgcheck=0">/etc/yum.repos.d/ftp.repo
+yum makecache fast && yum install openssh-server  -y
+
+mkdir /var/run/sshd
+echo 'UseDNS no' >> /etc/ssh/sshd_config
+sed -i -e '/pam_loginuid.so/d' /etc/pam.d/sshd
+echo 'root:123456' | chpasswd
+/usr/bin/ssh-keygen -A
+
+docker  commit oldguo_c75sshd d2bcdbdfd0f8 
+[root@docker ~]# docker container run -d  --name=sshd_2222    -p 222:22  oldguo_c75sshd /usr/sbin/sshd -D
+
+
+# 8. 通过Dockerfile定制企业镜像
+## 8.1 Dockerfile的基本使用初体验（centos6.9_sshd）
+[root@docker ~]# mkdir -p /opt/dockerfile/centos6.9_sshd
+[root@docker centos6.9_sshd]# vim Dockerfile
+
+# Centos6.9-SSHDv1.0
+FROM centos@2199b8eb8390
+RUN mv /etc/yum.repos.d/*.repo /tmp && echo -e "[ftp]\nname=ftp\nbaseurl=ftp://172.17.0.1/centos6.9\ngpgcheck
+=0">/etc/yum.repos.d/ftp.repo && yum makecache fast && yum install openssh-server -y
+RUN  /etc/init.d/sshd start && /etc/init.d/sshd stop && echo "123456" | passwd root --stdin
+EXPOSE 22
+CMD ["/usr/sbin/sshd","-D"]
+
+      
+ 
+## 8.2 Dockerfile 常用指令 
+
+FROM： 基础镜像
+	Syntax：
+	FROM	centos:6.9
+	FROM 	centos@2199b8eb8390
+		
+RUN：  构建镜像过程中运行的命令
+	Syntax：
+	RUN	 mv /etc/yum.repos.d/*.repo /tmp && echo -e "[ftp]\nname=ftp\nbaseurl=ftp://172.17.0.1/centos6.9\ngpgcheck
+=0">/etc/yum.repos.d/ftp.repo && yum makecache fast && yum install openssh-server -y
+	RUN	["mysqld","--initialize-insecure","--user=mysql"  ,"--basedir=/usr/local/mysql","--datadir=/data/mysql/data"] 
+
+EXPOSE: 向外暴露的端口 
+	Syntax:
+		EXPOSE  22	
+CMD    使用镜像启动容器时运行的命令
+	Syntax：
+	CMD	["/usr/sbin/sshd","-D"]
+
+docker rmi $(docker image ls -a | grep "none" | awk '{print $3}') 
+
+
+# 8.3 通过例子学习其他指令
+## dockerfile 构建Lamp基础环境镜像
+[root@docker dockerfile]# mkdir -p /opt/dockerfile/lamp
+[root@docker dockerfile]# cd /opt/dockerfile/lamp/
+[root@docker lamp]# vim dockerfile
+# Centos6.9_sshd_LAMP
+FROM centos:6.9
+RUN mv /etc/yum.repos.d/*.repo /tmp && echo -e "[ftp]\nname=ftp\nbaseurl=ftp://172.17.0.1/centos6.9\ngpgcheck=0">/etc/yum.repos.d/ftp
+.repo && yum makecache fast && yum install openssh-server htppd mysql mysql-server php php-mysql -y
+RUN /etc/init.d/sshd start && echo "123456" | passwd  root --stdin  && /etc/init.d/mysqld start && /etc/init.d/httpd start
+##RUN mysql -e "grant all on *.* to root@'%' identified by '123';grant all on *.* to discuz@'%' identified by '123';create database discuz charset utf8;"
+COPY init.sh /
+ADD  bbs.tar.gz /var/www/html/
+ADD  https://mirrors.aliyun.com/centos/7.6.1810/os/x86_64/Packages/centos-bookmarks-7-1.el7.noarch.rpm /tmp
+EXPOSE 22
+EXPOSE 80
+EXPOSE 3306
+CMD ["/bin/bash","/init.sh"]
+
+[root@docker lamp]# cat init.sh 
+#!/bin/bash
+/etc/init.d/mysqld start
+mysql -e "grant all on *.* to root@'%' identified by '123';grant all on *.* to discuz@'%' identified by '123';create database d
+iscuz charset utf8;"
+/etc/init.d/httpd start
+/usr/sbin/sshd -D
+
+[root@docker lamp]# cp /opt/vol/html/bbs.tar.gz ./
+
+73a87bbfa5b0        47b09321a33c        "/bin/bash /init.sh"     13 seconds ago      Up 12 seconds                    0.0.0.0:32770->22/tcp, 0.0.0.0:32769->80/tcp, 0.0.0.0:32768->3306/tcp   nostalgic_minsky
+
+CMD ["/bin/bash","/init.sh"]
+
+说明：
+COPY命令： 
+
+Syntax：
+	  <src>...   <dest>
+	  
+		从dockerfile所在目录，拷贝目标文件到容器的制定目录下。
+		可以支持统配符，如果拷贝的是目录，只拷贝目录下的子文件子目录。
+		cp oldguo/* 		
+ADD    	
+Syntax：
+	  <src>...   <dest>
+	  url        <dest>
+
+	  比COPY命令多的功能是，可以自动解压.tar*的软件包到目标目录下
+	  可以指定源文件为URL地址
+
+VOLUME ["/var/www/html","/data/mysql/data"]
+
+WORKDIR 
+
+ENV  设定变量 
+ENV CODEDIR /var/www/html/
+ENV DATADIR /data/mysql/data
+ADD bbs.tar.gz ${CODEDIR}
+VOLUME ["${CODEDIR}","${DATADIR}"]
+
+
+ENTRYPOINT
+
+#CMD ["/bin/bash","/init.sh"]
+ENTRYPOINT ["/bin/bash","/init.sh"]
+
+说明： 
+ENTRYPOINT 可以方式，在启动容器时，第一进程被手工输入的命令替换掉，防止容器秒起秒关
+
+
+小结： 
+FROM 
+RUN 
+COPY 
+ADD  
+EXPOSE
+VOLUME
+ENV
+CMD 
+ENTRYPOINT
+
+作业：  通过 Dockerfile 一键构建Nginx?+mysql5.7+php?+sshd+wordpress
+ 
+#9. Docker构建私有registry
+## 9.1  启动registry
+```
+docker run -d -p 5000:5000 --restart=always --name registry -v /opt/registry:/var/lib/registry  registry
+```
+## 9.2  修改配置文件
+```
+{
+  "registry-mirrors": ["https://68rmyzg7.mirror.aliyuncs.com"],
+   "insecure-registries": ["10.0.0.100:5000"]
+}
+
+[root@docker docker]# systemctl  restart docker
+```
+## 9.3 制作本地镜像并push到
+```
+[root@docker ~]# docker tag nginx 10.0.0.100:5000/oldguo/nginx:v1
+[root@docker ~]# docker images
+[root@docker ~]# docker push 10.0.0.100:5000/oldguo/nginx:v1
+```
+## 9.4 异地进行pull镜像
+```
+[root@docker ~]# docker pull  10.0.0.100:5000/oldguo/nginx:v1
+```
+## 9.5 本地仓库加安全认证
+```
+生成密码:
+yum install httpd-tools -y
+mkdir /opt/registry-auth/ -p
+htpasswd  -Bbn oldguo 123 > /opt/registry-auth/htpasswd
+```
+##  9.6 重新启动带有秘钥功能的registry容器
+```
+docker rm -f `docker ps -aq`
+docker run -d -p 5000:5000 -v /opt/registry-auth/:/auth/ -v /opt/registry:/var/lib/registry  --name register-auth -e "REGISTRY_AUTH=htpasswd" -e "REGISTRY_AUTH_HTPASSWD_REALM=Registry Realm" -e "REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd" registry 
+```
+## 9.7 push镜像,需要进行login
+```
+[root@oldboy ~]# docker login 10.0.0.100:5000
+Username: oldguo  
+Password: 
+```
+## 10. 重启docker服务，容器全部退出的解决办法
+```
+
+方法一：docker run  --restart=always
+
+方法二："live-restore": true
+docker server配置文件/etc/docker/daemon.json参考
+{
+.....
+......
+ "live-restore": true
+}
+```
+## 11. habor实现图形化register
+```
+1. 安装:
+第一步：安装docker和docker-compose
+yum install -y docker-compose 
+第二步：下载harbor-offline-installer-vxxx.tgz
+第三步：上传到/opt,并解压
+第四步：修改harbor.cfg配置文件
+hostname = 10.0.0.100
+harbor_admin_password = 123456
+第五步：执行install.sh
+
+2. 使用方法: 
+修改各个节点的docker配置文件
+
+{
+  "registry-mirrors": ["https://uoggbpok.mirror.aliyuncs.com"],
+  "insecure-registries": ["10.0.0.100:5000","10.0.0.100"],
+  "live-restore": true
+}
+systemctl restart docker
+
+3. 在habor中添加项目
+略.
+
+
+4. 制作镜像并上传habor 
+[root@docker harbor]# docker tag centos:6.9 10.0.0.100/oldguo/centos:v1
+[root@docker harbor]# docker login 10.0.0.100
+[root@docker harbor]# docker push 10.0.0.100/oldguo/centos:v1
+
+5. 在节点中pull habor中的镜像
+docker pull 10.0.0.100/oldguo/centos:v1
+
+```
+ 
+
+#12. Docker本地网络类型
+
+## 12.1查看支持网络类型
+```
+docker network ls
+```
+## 12.2 测试使用各类网络类型
+```
+docker run network=xxx
+none : 无网络模式
+bridge ： 默认模式，相当于NAT
+host : 公用宿主机Network NameSapce
+container：与其他容器公用Network Namespace
+
+```
+# 13. Docker跨主机网络介绍
+```
+macvlan
+```
+```
+overlay
+```
+#14. Docker跨主机访问-macvlan实现
+
+```
+docker network create --driver macvlan --subnet=100.0.0.0/24 --gateway=100.0.0.254 -o parent=eth0 macvlan_1
+ip link set eth0 promsic on (ubuntu或其他版本需要)
+[root@docker ~]# docker run -it --network macvlan_1 --ip=10.0.0.11 oldguo/centos6.9-sshd:v1.0  /bin/bash
+[root@docker ~]# docker run -it --network macvlan_1 --ip=10.0.0.12 centos:6.9  /bin/bash
+
+```
+#15. Docker 跨主机访问-overlay实现
+
+```
+(1)启动 consul 服务,实现网络的统一配置管理
+docker run -d -p 8500:8500 -h consul --name consul progrium/consul -server -bootstrap
+
+consul：kv类型的存储数据库（key:value）
+docker01、02上：
+vim  /etc/docker/daemon.json
+{
+  "hosts":["tcp://0.0.0.0:2376","unix:///var/run/docker.sock"],
+  "cluster-store": "consul://10.0.0.100:8500",
+  "cluster-advertise": "10.0.0.100:2376"
+}
+
+vim  /etc/docker/daemon.json
+{
+  "hosts":["tcp://0.0.0.0:2376","unix:///var/run/docker.sock"],
+  "cluster-store": "consul://10.0.0.100:8500",
+  "cluster-advertise": "10.0.0.101:2376"
+}
+
+
+vim /etc/docker/daemon.json 
+vim /usr/lib/systemd/system/docker.service
+systemctl daemon-reload 
+systemctl restart docker
+
+2）创建overlay网络
+docker network create -d overlay --subnet 172.116.0.0/24 --gateway 172.11.0.254  overlay
+
+3）两边启动容器测试
+docker run -it --network  overlay   busybox /bin/sh
+每个容器有两块网卡,eth0实现容器间的通讯,eth1实现容器访问外网
+```
+ vim /usr/lib/systemd/system/docker.service
+ ExecStart=/usr/bin/docker daemon -H tcp://0.0.0.0:2376 -H unix:///var/run/docker.sock --cluster-store=consul://10.0.0.100:8500 --cluster-advertise=10.0.0.100:2376 
+ 
+ 
+ 

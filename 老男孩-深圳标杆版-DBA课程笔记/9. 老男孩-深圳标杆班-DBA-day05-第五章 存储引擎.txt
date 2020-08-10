@@ -1,0 +1,91 @@
+1.简介
+相当于Linux文件系统，只不过比文件系统强大
+
+2、功能了解
+数据读写
+数据安全和一致性
+提高性能
+热备份
+自动故障恢复
+高可用方面支持
+等.
+
+3. 存储引擎介绍
+show  engies;
+CSV               
+MRG_MYISAM        
+MyISAM            
+BLACKHOLE         
+PERFORMANCE_SCHEMA
+MEMORY            
+ARCHIVE           
+InnoDB            
+FEDERATED      
+
+笔试题: 
+InnoDB ,MyISAM ,MEMORY,CSV
+默认的存储引擎:InnoDB
+
+PerconaDB:默认是XtraDB
+MariaDB:默认是InnoDB
+
+第三方的存储引擎:
+RocksDB MyRocks TokuDB
+压缩比较高,数据的插入性能高.其他功能和InnoDB没差.
+
+
+4. 简历案例---zabbix监控系统架构整改(真实案例)
+环境: zabbix 3.2    mariaDB 5.5  centos 7.3
+现象 : zabbix卡的要死 ,  每隔3-4个月,都要重新搭建一遍zabbix,存储空间经常爆满.
+问题 :
+1. zabbix 版本 
+2. 数据库版本
+3. zabbix数据库500G,存在一个文件里
+
+优化建议:
+1.数据库版本升级到mariaDB最新版本,zabbix升级更高版本
+2.存储引擎改为tokudb
+3.监控数据按月份进行切割(二次开发:zabbix 数据保留机制功能重写,数据库分表)
+4.关闭binlog和双1
+5.参数调整....
+优化结果:
+监控状态良好
+
+为什么?
+1. 原生态支持TokuDB,另外经过测试环境,10版本要比5.5 版本性能 高 2-3倍
+2. TokuDB:insert数据比Innodb快的多，数据压缩比要Innodb高
+3.监控数据按月份进行切割,为了能够truncate每个分区表,立即释放空间
+4.关闭binlog ----->减少无关日志的记录.
+5.参数调整...----->安全性参数关闭,提高性能.
+
+
+5. InnoDB 存储引擎核心特性说明
+事务 
+行锁
+MVCC 
+外键
+ACSR自动故障恢复
+热备
+复制(多线程,GTID,MTS)
+
+
+
+6. InnoDB个MyISAM存储引擎的替换(客户案例)
+环境: centos 5.8 ,MySQL 5.0版本,MyISAM存储引擎,网站业务(LNMP),数据量50G左右
+现象问题: 业务压力大的时候,非常卡;经历过宕机,会有部分数据丢失.
+
+问题分析:
+1.MyISAM存储引擎表级锁,在高并发时,会有很高锁等待
+2.MyISAM存储引擎不支持事务,在断电时,会有可能丢失数据
+职责
+1.监控锁的情况:有很多的表锁等待
+2.存储引擎查看:所有表默认是MyISAM
+解决方案:
+1.升级MySQL 5.6.10版本
+2. 迁移所有表到新环境
+3. 开启双1安全参数
+
+
+
+
+

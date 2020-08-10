@@ -1,0 +1,372 @@
+1. 上节回顾
+1.1   binlog_format 
+SBR   update t1 set name='zs' where id>50;
+RBR   
+MBR
+1.2  主从故障
+IO 
+连
+取
+存
+SQL 
+回放
+
+1.3  主从延时
+主库: 
+DUMP_T
+gtid 
+sync_binlog
+binlog_group_commit_sync_delay         
+binlog_group_commit_sync_no_delay_count
+从库:
+SQL :   5.7 GTID  MTS 
+
+1.4 主从延时的监控 
+
+(1) 有没有的问题?
+Seconds_Behind_Master: 0
+
+(2) 有没有主库原因?
+
+Master_Log_File: mysql-bin.000003
+Read_Master_Log_Pos: 154
+
+| mysql-bin.000003 |      154
+
+(3) 有没有及时回放
+
+Master_Log_File: mysql-bin.000003
+Read_Master_Log_Pos: 154
+
+[root@db01 data]# cat relay-log.info 
+./db01-relay-bin.000009
+367
+mysql-bin.000003
+154
+================================
+主从复制高级进阶
+1. 延时从库   *****
+1.1 介绍及配置
+SQL线程延时:数据已经写入relaylog中了,SQL线程"慢点"运行
+一般企业建议3-6小时,具体看公司运维人员对于故障的反应时间
+
+mysql>stop slave;
+mysql>CHANGE MASTER TO MASTER_DELAY = 300;
+mysql>start slave;
+mysql> show slave status \G
+SQL_Delay: 300
+SQL_Remaining_Delay: NULL
+1.2 延时从库处理逻辑故障
+1.2.1 延时从库的恢复思路
+(1) 监控到数据库逻辑故障
+(2) 停从库SQL线程,记录已经回放的位置点(截取日志起点)
+	stop slave sql_thread ;
+	show slave status \G
+	Relay_Log_File: db01-relay-bin.000002
+    Relay_Log_Pos: 320
+
+(3) 截取relaylog
+	起点: 	
+	show slave status \G
+	Relay_Log_File ,Relay_Log_Pos
+	
+    终点: drop之前的位置点
+	show relaylog events in ''	
+	进行截取
+(4) 模拟SQL线程回访日志
+	从库  source 
+(5) 恢复业务
+	情况一: 就一个库的话
+	从库替代主库工作
+	情况二: 
+	从库导出故障库,还原到主库中.
+1.2.2 故障演练
+主库 : 
+create database delay charset utf8mb4;
+use delay;
+create table t1 (id int);
+insert into t1 values(1),(2),(3);
+commit;
+drop database delay;
+
+从库:
+
+# 1.停止 从库SQL 线程,获取relay的位置点
+mysql> stop slave sql_thread;
+mysql> show slave status \G
+Relay_Log_File: db01-relay-bin.000002
+Relay_Log_Pos: 626
+
+# 2. 找到relay的截取终点
+mysql> show relaylog events in 'db01-relay-bin.000002';
+| db01-relay-bin.000002 | 1299 | Query          |         7 |        1228 | drop database delay            
+
+3. 截取relay
+[root@db01 data]# cd /data/3308/data/
+[root@db01 data]# mysqlbinlog --start-position=626 --stop-position=1299 db01-relay-bin.000002 >/tmp/relay.sql
+
+4. 恢复relay到从库
+[root@db01 data]# mysql -uroot -p -S /data/3308/mysql.sock 
+mysql> set sql_log_bin=0;
+mysql> source /tmp/relay.sql
+
+2. 过滤复制   *****
+2.0 快速恢复测试环境
+从库 :
+mysql -S /data/3308/mysql.sock
+drop database delay ;
+stop slave;
+reset slave all;
+
+主库: 
+mysql -S /data/33078/mysql.sock
+reset master;
+
+从库: 
+[root@db01 ~]# mysql -S /data/3308/mysql.sock 
+
+CHANGE MASTER TO 
+MASTER_HOST='10.0.0.51',
+MASTER_USER='repl',
+MASTER_PASSWORD='123',
+MASTER_PORT=3307,
+MASTER_LOG_FILE='mysql-bin.000001',
+MASTER_LOG_POS=154,
+MASTER_CONNECT_RETRY=10;
+start slave;
+
+2.1 过滤复制应用
+
+主库: 
+show master status ;
+binlog_do_db
+binlog_ignore_db 
+从库: 
+mysql> show slave status \G
+Replicate_Do_DB: 
+Replicate_Ignore_DB:
+Replicate_Do_Table: 
+Replicate_Ignore_Table: 
+Replicate_Wild_Do_Table: 
+Replicate_Wild_Ignore_Table: 
+
+例子:
+vim /etc/my.cnf
+replicate_do_db=repl
+[root@db01 data]# systemctl restart mysqld3308
+
+
+2.3 GTID复制 	  *****
+2.3.1 介绍
+GTID(Global Transaction ID)是对于一个已提交事务的唯一编号，并且是一个全局(主从复制)唯一的编号。
+它的官方定义如下：
+GTID = source_id ：transaction_id
+7E11FA47-31CA-19E1-9E56-C43AA21293967:29
+什么是sever_uuid，和Server-id 区别？
+核心特性: 全局唯一,具备幂等性
+
+2.3.2 GTID核心参数
+重要参数：
+
+gtid-mode=on
+enforce-gtid-consistency=true
+log-slave-updates=1
+
+gtid-mode=on                                --启用gtid类型，否则就是普通的复制架构
+enforce-gtid-consistency=true               --强制GTID的一致性
+log-slave-updates=1                         --slave更新是否记入日志
+
+
+2.3.3 GTID复制配置过程：
+
+(1) 清理环境
+pkill mysqld
+ \rm -rf /data/mysql/data/*
+ \rm -rf /data/binlog/*
+ 
+ 
+(2) 准备配置文件
+主库db01：
+
+cat > /etc/my.cnf <<EOF
+[mysqld]
+basedir=/application/mysql/
+datadir=/data/mysql/data
+socket=/tmp/mysql.sock
+server_id=51
+port=3306
+secure-file-priv=/tmp
+autocommit=0
+log_bin=/data/binlog/mysql-bin
+binlog_format=row
+gtid-mode=on
+enforce-gtid-consistency=true
+log-slave-updates=1
+[mysql]
+prompt=db01 [\\d]>
+EOF
+
+slave1(db02)：
+cat > /etc/my.cnf <<EOF
+[mysqld]
+basedir=/application/mysql
+datadir=/data/mysql/data
+socket=/tmp/mysql.sock
+server_id=52
+port=3306
+secure-file-priv=/tmp
+autocommit=0
+log_bin=/data/binlog/mysql-bin
+binlog_format=row
+gtid-mode=on
+enforce-gtid-consistency=true
+log-slave-updates=1
+[mysql]
+prompt=db02 [\\d]>
+EOF
+
+slave2(db03)：
+cat > /etc/my.cnf <<EOF
+[mysqld]
+basedir=/application/mysql
+datadir=/data/mysql/data
+socket=/tmp/mysql.sock
+server_id=53
+port=3306
+secure-file-priv=/tmp
+autocommit=0
+log_bin=/data/binlog/mysql-bin
+binlog_format=row
+gtid-mode=on
+enforce-gtid-consistency=true
+log-slave-updates=1
+[mysql]
+prompt=db03 [\\d]>
+EOF
+
+
+(3) 初始化数据
+mysqld --initialize-insecure --user=mysql --basedir=/application/mysql  --datadir=/data/mysql/data 
+
+(4) 启动数据库
+/etc/init.d/mysqld start
+
+
+(5) 构建主从：
+master:51
+slave:52,53
+
+51:
+grant replication slave  on *.* to repl@'10.0.0.%' identified by '123';
+
+52\53:
+change master to 
+master_host='10.0.0.51',
+master_user='repl',
+master_password='123' ,
+MASTER_AUTO_POSITION=1;
+start slave;
+
+
+2.3.4  GTID 复制和普通复制的区别
+（0）在主从复制环境中，主库发生过的事务，在全局都是由唯一GTID记录的，更方便Failover
+（1）额外功能参数（3个）
+（2）change master to 的时候不再需要binlog 文件名和position号,MASTER_AUTO_POSITION=1;
+（3）在复制过程中，从库不再依赖master.info文件，而是直接读取最后一个relaylog的 GTID号
+（4） mysqldump备份时，默认会将备份中包含的事务操作，以以下方式
+   ####  SET @@GLOBAL.GTID_PURGED='8c49d7ec-7e78-11e8-9638-000c29ca725d:1-11';
+    告诉从库，我的备份中已经有以上事务，你就不用运行了，直接从下一个GTID开始请求binlog就行。
+
+4. 半同步     ***
+解决主从复制数据一致性问题.
+ACK ,从库relay落地,IO线程会返回一个ACK,主库的 ACK_reciver .主库事务才能提交.如果一直ACK没收到,超过10秒钟会切换为异步复制.
+
+5. MHA高可用  ****
+5.1 搭建体验
+(1)配置关键程序软连接
+ln -s /data/mysql/bin/mysqlbinlog    /usr/bin/mysqlbinlog
+ln -s /data/mysql/bin/mysql          /usr/bin/mysql
+
+
+
+(2)配置互信
+db01：
+rm -rf /root/.ssh 
+
+ssh-keygen
+
+cd /root/.ssh 
+
+mv id_rsa.pub authorized_keys
+
+scp  -r  /root/.ssh  10.0.0.52:/root 
+scp  -r  /root/.ssh  10.0.0.53:/root 
+
+
+各节点验证
+db01:
+ssh 10.0.0.51 date
+ssh 10.0.0.52 date
+ssh 10.0.0.53 date
+db02:
+ssh 10.0.0.51 date
+ssh 10.0.0.52 date
+ssh 10.0.0.53 date
+db03:
+ssh 10.0.0.51 date
+ssh 10.0.0.52 date
+ssh 10.0.0.53 date
+
+
+(3)安装软件包
+yum install perl-DBD-MySQL -y
+rpm -ivh mha4mysql-node-0.56-0.el6.noarch.rpm
+
+(4) 在db01主库中创建mha需要的用户
+grant all privileges on *.* to mha@'10.0.0.%' identified by 'mha';
+
+(5) Manager软件安装（db03）
+yum install -y perl-Config-Tiny epel-release perl-Log-Dispatch perl-Parallel-ForkManager perl-Time-HiRes
+rpm -ivh mha4mysql-manager-0.56-0.el6.noarch.rpm
+
+(6) 配置文件准备(db03)
+	创建配置文件目录
+ mkdir -p /etc/mha
+	创建日志目录
+ mkdir -p /var/log/mha/app1
+	编辑mha配置文件
+cat > /etc/mha/app1.cnf <<EOF
+[server default]
+manager_log=/var/log/mha/app1/manager        
+manager_workdir=/var/log/mha/app1            
+master_binlog_dir=/data/binlog       
+user=mha                                   
+password=mha                               
+ping_interval=2
+repl_password=123
+repl_user=repl
+ssh_user=root                               
+[server1]                                   
+hostname=10.0.0.51
+port=3306                                  
+[server2]            
+hostname=10.0.0.52
+port=3306
+[server3]
+hostname=10.0.0.53
+port=3306
+EOF
+
+
+(7)  状态检查(db03)
+### 互信检查
+ masterha_check_ssh  --conf=/etc/mha/app1.cnf 
+ masterha_check_repl  --conf=/etc/mha/app1.cnf 
+ 
+ 
+(8) 开启MHA(db03)：
+nohup masterha_manager --conf=/etc/mha/app1.cnf --remove_dead_master_conf --ignore_last_failover  < /dev/null> /var/log/mha/app1/manager.log 2>&1 &
+
+
+(9)  查看MHA状态
+[root@db03 ~]# masterha_check_status --conf=/etc/mha/app1.cnf

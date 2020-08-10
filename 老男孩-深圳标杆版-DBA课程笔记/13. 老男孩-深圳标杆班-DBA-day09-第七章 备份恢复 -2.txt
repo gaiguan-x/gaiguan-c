@@ -1,0 +1,325 @@
+1. 上节回顾
+mysqldump 核心参数
+-A 
+-B 
+库 表 
+
+--master-data=2
+(1) 以注释的形式记录二进制日志信息
+(2) 自动开启锁表的功能
+
+--single-transaction 
+针对InnoDB进行快照备份
+-R 
+-E
+--triggers 
+
+--set-gtid-purged=AUTO/ON/OFF
+默认是auto 
+主从复制,忽略此参数 
+普通备份,可以OFF
+
+-F
+=======================
+Xtrabackup
+
+1. 备份的过程
+(1) 非InnoDB表,进行短暂的锁表,然后Copy数据文件
+(2) 对于InnoDB表,立即出发checkpoint,会立即记录一个LSN,COPY数据文件.
+(3) 将备份过程中产生的redo进行截取和保存,并记录此时最新的LSN
+
+2. 恢复过程
+模拟了CSR的全过程,在恢复之前,将数据的LSN号和redo LSN号追平
+恢复方法就是直接cp回去即可
+
+3. XBK 全备和恢复体验
+
+innobackupex --user=root --password=123 --no-timestamp /backup/full 
+innobackupex --apply-log /backup/full 
+
+4. 备份产生的文件介绍
+(1) xtrabackup_binlog_info  *****
+记录备份时刻的二进制日志信息. 可以作为binlog截取的起点.
+(2) xtrabackup_checkpoints  *****
+from : 备份中包含的LSN号的起点,全备:0,增量:上次备份的结束位置
+to 	 : ckpt 时的LSN
+last-9 : 备份结束时的LSN.下次增量备份的起始位置.
+
+
+
+5. 增量备份
+5.1 清空备份路径
+\rm -rf /backup/*
+5.2 模拟数据
+create database full charset utf8mb4;
+use full;
+create table t1 (id int);
+insert into t1 values(1),(2),(3);
+commit;
+5.3 进行周日的全备
+[root@db01 backup]# innobackupex --user=root --password=123 --no-timestamp /backup/full
+5.4 模拟周一的数据变化
+create database inc1 charset utf8mb4;
+use inc1;
+create table t1 (id int);
+insert into t1 values(1),(2),(3);
+commit;
+
+5.5 进行周一的增量备份
+innobackupex   --user=root --password=123 --no-timestamp --incremental --incremental-basedir=/backup/full /backup/inc1 
+
+说明:
+--incremental    开关 
+--incremental-basedir=/backup/full 基于哪个备份进行增量
+/backup/inc1     增量备份的位置点
+
+5.6 检查备份的LSN
+[root@db01 backup]# cat /backup/full/xtrabackup_checkpoints 
+backup_type = full-backuped
+from_lsn = 0
+to_lsn = 217478672
+last_lsn = 217478681
+compact = 0
+recover_binlog_info = 0
+[root@db01 backup]# cat /backup/inc1/xtrabackup_checkpoints 
+backup_type = incremental
+from_lsn = 217478672
+to_lsn = 217484653
+last_lsn = 217484662
+compact = 0
+recover_binlog_info = 0
+
+5.7 模拟周二数据变化
+create database inc2 charset utf8mb4;
+use inc2;
+create table t1 (id int);
+insert into t1 values(1),(2),(3);
+commit;
+
+5.8 周二的增量
+innobackupex   --user=root --password=123 --no-timestamp --incremental --incremental-basedir=/backup/inc1 /backup/inc2 
+
+5.9 周三的数据变化
+create database inc3 charset utf8mb4;
+use inc3;
+create table t1 (id int);
+insert into t1 values(1),(2),(3);
+commit;
+
+5.10 模拟上午10点数据库崩溃
+pkill mysqld 
+\rm -rf /data/mysql/data/*
+
+
+5.11 恢复思路
+1. 停业务,挂维护页
+2. 查找可用备份并处理备份:full+inc1+inc2 
+3. binlog: inc2 到 故障时间点的binlog
+4. 恢复全备+增量+binlog
+5. 验证数据
+6. 起业务,撤维护页
+
+5.12 恢复前的准备
+(1) 整理full
+innobackupex --apply-log --redo-only  /backup/full
+
+(2) 合并inc1到full,并整理备份
+innobackupex --apply-log --redo-only  --incremental-dir=/backup/inc1 /backup/full 
+
+(3) 合并inc2到full,并整理备份 
+innobackupex --apply-log  --incremental-dir=/backup/inc2 /backup/full 
+
+(4) 最后一次整理full
+innobackupex --apply-log  /backup/full
+
+
+5.13 截取二进制日志
+起点:
+cat /backup/inc2/xtrabackup_binlog_info
+
+mysql-bin.000031	1997	aa648280-a6a6-11e9-949f-000c294a1b3b:1-17,
+e16db3fd-a6e8-11e9-aee9-000c294a1b3b:1-9
+
+终点:
+mysqlbinlog /data/binlog/mysql-bin.000031 |grep 'SET'
+
+SET @@SESSION.GTID_NEXT= 'e16db3fd-a6e8-11e9-aee9-000c294a1b3b:12'/*!*/;
+
+mysqlbinlog --skip-gtids --include-gtids='e16db3fd-a6e8-11e9-aee9-000c294a1b3b:10-12' /data/binlog/mysql-bin.000031>/backup/binlog.sql
+
+5.14 恢复备份数据
+[root@db01 /]# cp -a  /backup/full/* /data/mysql/data/
+[root@db01 /]# chown -R mysql. /data/
+[root@db01 /]# /etc/init.d/mysqld start
+mysql> set sql_log_bin=0;
+mysql> source /backup/binlog.sql
+
+
+5.15 验证数据
+mysql> select * from full.t1;
+mysql> select * from inc1.t1;
+mysql> select * from inc2.t1;
+mysql> select * from inc3.t1;
+
+
+作业1
+ Xtrabackup企业级增量恢复实战
+背景：
+某大型网站，mysql数据库，数据量500G，每日更新量20M-30M
+备份策略：
+xtrabackup，每周日0:00进行全备，周一到周六00:00进行增量备份。
+故障场景：
+周三下午2点出现数据库意外删除表操作。
+如何恢复？
+
+
+作业2
+练习：mysqldump备份恢复例子
+1、创建一个数据库 oldboy
+2、在oldboy下创建一张表t1
+3、插入5行任意数据
+4、全备
+5、插入两行数据，任意修改3行数据，删除1行数据
+6、删除所有数据
+7、再t1中又插入5行新数据，修改3行数据
+需求，跳过第六步恢复表数据
+
+作业3
+分别写备份脚本和策略
+
+
+作业4：备份集中单独恢复表
+思考:在之前的项目案例中,如果误删除的表只有10M,而备份有500G,该如何快速恢复误删除表?
+提示：
+drop table city;
+create table city like city_bak;
+alter table city discard tablespace;
+cp /backup/full/world/city.ibd  /application/mysql/data/world/
+chown -R mysql.mysql  /application/mysql/data/world/city.ibd 
+alter table city import  tablespace;
+
+
+作业5： 从mysqldump 全备中获取库和表的备份
+1、获得表结构
+# sed -e'/./{H;$!d;}' -e 'x;/CREATE TABLE `city`/!d;q'  full.sql>createtable.sql
+2、获得INSERT INTO 语句，用于数据的恢复
+# grep -i 'INSERT INTO `city`'  full.sqll >data.sql &
+3.获取单库的备份
+# sed -n '/^-- Current Database: `world`/,/^-- Current Database: `/p' all.sql >world.sql
+
+
+6. 迁移(5.6.44  --->  5.7.26)
+6.1 搭建5.6的测试环境
+(1)创建必须的目录
+[root@oldboyedu ~]# mkdir /data/mysql/data  -p 
+[root@oldboyedu ~]# mkdir /application/ -p
+[root@oldboyedu ~]# mkdir /data/binlog -p
+上传软件至 /application 下并解压
+(2) 建用户,改权限
+[root@oldboyedu ~]# useradd mysql
+[root@oldboyedu ~]# chown -R mysql. /data /application/
+(3) 修改环境变量
+vim /etc/profile
+export PATH=/application/mysql/bin:$PATH
+source /etc/profile
+
+(4)数据初始化 
+[root@oldboyedu ~]# yum remove mariadb-libs
+[root@oldboyedu ~]# yum install -y libaio-devel
+[root@oldboyedu ~]# \rm -rf /data/mysql/data/*
+[root@oldboyedu ~]# /application/mysql/scripts/mysql_install_db --user=mysql --basedir=/application/mysql --datadir=/data/mysql/data
+
+(5) 准备配置文件和启动脚本
+cat > /etc/my.cnf <<EOF
+[mysqld]
+basedir=/application/mysql 
+datadir=/data/mysql/data 
+server_id=99
+user=mysql
+log_bin=/data/binlog/mysql-bin
+binlog_format=row
+socket=/tmp/mysql.sock 
+[mysql]
+socket=/tmp/mysql.sock
+EOF
+
+[root@oldboyedu data]# cp  /application/mysql/support-files/mysql.server /etc/init.d/mysqld
+
+(5) 启动数据库
+[root@oldboyedu data]# /etc/init.d/mysqld start
+[root@oldboyedu data]# mysqladmin -uroot -p password 123
+
+
+6.2 迁移5.6 数据到 5.7  (扩展)
+(1) 5.6 数据库备份
+[root@oldboyedu ~]# mysqldump -uroot -p123 -A --master-data=2 --single-transaction -R -E --triggers >/tmp/full.sql
+[root@oldboyedu ~]# scp /tmp/full.sql 10.0.0.51:/data/3308 
+(2)准备5.7数据库
+[root@db01 /]# systemctl start mysqld3308
+[root@db01 /]# mysql -S /data/3308/mysql.sock
+mysql> source /data/3308/full.sql
+[root@db01 /]# mysql_upgrade  -uroot -p123 -S /data/3308/mysql.sock
+(3) binlog的持续追加
+(4) 停业务,恢复剩余的binlog
+(5) 业务割接
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
